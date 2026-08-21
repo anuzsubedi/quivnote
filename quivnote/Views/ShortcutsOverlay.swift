@@ -39,7 +39,10 @@ struct ShortcutsOverlay: View {
             [
                 (["⌘", "F"], "Find"),
                 (["⌘", "H"], "Find & replace"),
-                (["⌘", "M"], "Markdown preview"),
+                (["⌘", "B"], "Bold selection"),
+                (["⌘", "I"], "Italicize selection"),
+                (["⌘", "U"], "Underline selection"),
+                (["⌘", "M"], "Cycle editor mode"),
                 (["⌘", "L"], "Line numbers"),
             ]
         ),

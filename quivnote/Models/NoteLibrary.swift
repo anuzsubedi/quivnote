@@ -4,6 +4,7 @@
 //
 
 import Foundation
+import MarkdownUI
 import Observation
 
 @Observable
@@ -28,7 +29,12 @@ final class NoteLibrary {
             notes = []
             return
         }
-        notes = decoded.sorted { $0.updatedAt > $1.updatedAt }
+        notes = decoded.map { item in
+            var normalized = item
+            normalized.title = Self.normalizedTitle(item.title, body: item.body)
+            return normalized
+        }
+        .sorted { $0.updatedAt > $1.updatedAt }
     }
 
     func note(id: UUID) -> LibraryNote? {
@@ -87,19 +93,28 @@ final class NoteLibrary {
     static func normalizedTitle(_ title: String, body: String) -> String {
         let explicit = title.trimmingCharacters(in: .whitespacesAndNewlines)
         if !explicit.isEmpty, explicit != "Untitled" {
-            return String(explicit.prefix(80))
+            let normalized = plainText(from: explicit)
+            if !normalized.isEmpty { return String(normalized.prefix(80)) }
         }
         for line in body.components(separatedBy: .newlines) {
             let trimmed = line.trimmingCharacters(in: .whitespaces)
             guard !trimmed.isEmpty else { continue }
-            if trimmed.hasPrefix("#") {
-                let stripped = trimmed.drop(while: { $0 == "#" || $0 == " " })
-                if !stripped.isEmpty { return String(stripped.prefix(80)) }
-            } else {
-                return String(trimmed.prefix(80))
-            }
+            let normalized = plainText(from: trimmed)
+            if !normalized.isEmpty { return String(normalized.prefix(80)) }
         }
         return "Untitled"
+    }
+
+    private static func plainText(from markdown: String) -> String {
+        var plain = MarkdownContent(markdown).renderPlainText()
+        plain = plain.replacingOccurrences(of: #"<[^>]+>"#, with: "", options: .regularExpression)
+        plain = plain.replacingOccurrences(of: #"^\s*(?:[-+*]|\d+[.)]|>)+\s*"#, with: "", options: .regularExpression)
+        plain = plain.replacingOccurrences(of: #"^\s*\[[ xX]\]\s*"#, with: "", options: .regularExpression)
+        let markerCharacters = CharacterSet(charactersIn: "*_~`#<>/ \t")
+        return plain
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .trimmingCharacters(in: markerCharacters)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     private func upsert(_ note: LibraryNote) {

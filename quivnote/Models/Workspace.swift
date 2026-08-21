@@ -195,8 +195,16 @@ final class Workspace {
         persist()
     }
 
-    func togglePreview() {
-        selectedTab?.showPreview.toggle()
+    func setEditorMode(_ mode: NoteEditorMode) {
+        selectedTab?.editorMode = mode
+        persist()
+    }
+
+    func cycleEditorMode() {
+        guard let tab = selectedTab,
+              let index = NoteEditorMode.allCases.firstIndex(of: tab.editorMode)
+        else { return }
+        tab.editorMode = NoteEditorMode.allCases[(index + 1) % NoteEditorMode.allCases.count]
         persist()
     }
 
@@ -525,7 +533,8 @@ final class Workspace {
                     title: $0.title,
                     text: $0.text,
                     isDirty: $0.isDirty,
-                    showPreview: $0.showPreview,
+                    editorMode: $0.editorMode,
+                    showPreview: nil,
                     showLineNumbers: $0.showLineNumbers
                 )
             }
@@ -546,10 +555,10 @@ final class Workspace {
             NoteTab(
                 id: UUID(uuidString: item.id) ?? UUID(),
                 libraryID: item.libraryID.flatMap(UUID.init(uuidString:)),
-                title: item.title ?? NoteLibrary.title(from: item.text ?? ""),
+                title: NoteLibrary.normalizedTitle(item.title ?? "", body: item.text ?? ""),
                 text: item.text ?? "",
                 isDirty: item.isDirty,
-                showPreview: item.showPreview,
+                editorMode: item.editorMode ?? (item.showPreview == true ? .preview : .wysiwyg),
                 showLineNumbers: item.showLineNumbers
             )
         }
@@ -606,7 +615,9 @@ private struct PersistedTab: Codable {
     var title: String?
     var text: String?
     var isDirty: Bool
-    var showPreview: Bool
+    var editorMode: NoteEditorMode?
+    /// Kept optional so workspace files from the two-mode editor still decode.
+    var showPreview: Bool?
     var showLineNumbers: Bool
 }
 

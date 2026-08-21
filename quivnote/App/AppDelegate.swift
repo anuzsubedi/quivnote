@@ -11,6 +11,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var panelController: NotePanelController?
     private var hotKeyManager: HotKeyManager?
     private var shortcutMonitor: ShortcutMonitor?
+    private var statusItemController: StatusItemController?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
@@ -24,6 +25,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         shortcuts.start()
         shortcutMonitor = shortcuts
 
+        let workspaceModel = workspace
+        statusItemController = StatusItemController(
+            openNote: { panel.show() },
+            newTab: {
+                panel.show()
+                workspaceModel.newTab()
+            },
+            openLibrary: {
+                panel.show()
+                workspaceModel.showLibrary()
+            },
+            openSettings: {
+                panel.show()
+                workspaceModel.showSettings()
+            }
+        )
+
         hotKeyManager = HotKeyManager {
             panel.toggle()
         }
@@ -33,6 +51,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         workspace.persist()
         shortcutMonitor?.stop()
         hotKeyManager?.tearDown()
+        statusItemController?.tearDown()
     }
 
     func showNote() {

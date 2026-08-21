@@ -136,20 +136,12 @@ struct NoteEditorView: View {
 
             Spacer()
 
-            if let tab = workspace.selectedTab {
+            if let tab = workspace.selectedTab, tab.isDirty || workspace.saveFlash {
                 statusBadge(tab)
             }
 
             if let tab = workspace.selectedTab {
-                toolbarButton(
-                    tab.showPreview ? "square.and.pencil" : "doc.richtext",
-                    id: "preview",
-                    label: tab.showPreview ? "Return to Editor" : "Show Markdown Preview",
-                    active: tab.showPreview
-                ) {
-                    workspace.togglePreview()
-                }
-                .help(tab.showPreview ? "Return to Editor (⌘M)" : "Markdown Preview (⌘M)")
+                editorModeControl(tab)
             }
 
             toolbarButton("gearshape", id: "settings", label: "Open Appearance Settings", active: workspace.settingsVisible) {
@@ -160,6 +152,41 @@ struct NoteEditorView: View {
         .padding(.horizontal, 16)
         .padding(.vertical, 8)
         .background(QuivPalette.chrome.opacity(0.45))
+    }
+
+    private func editorModeControl(_ tab: NoteTab) -> some View {
+        Menu {
+            ForEach(NoteEditorMode.allCases) { mode in
+                Button {
+                    workspace.setEditorMode(mode)
+                    if mode != .preview {
+                        NotificationCenter.default.post(name: .quivFocusEditor, object: nil)
+                    }
+                } label: {
+                    Label(mode.label, systemImage: tab.editorMode == mode ? "checkmark" : mode.icon)
+                }
+            }
+        } label: {
+            HStack(spacing: 3) {
+                Image(systemName: tab.editorMode.icon)
+                    .font(.system(size: 10.5, weight: .semibold))
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 6.5, weight: .bold))
+            }
+            .foregroundStyle(QuivPalette.accent)
+            .frame(width: 32, height: 26)
+            .background(QuivPalette.control, in: RoundedRectangle(cornerRadius: 6, style: .continuous))
+            .overlay {
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .strokeBorder(QuivPalette.accent.opacity(0.16), lineWidth: 0.5)
+            }
+        }
+        .menuStyle(.borderlessButton)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .help("Editor mode: \(tab.editorMode.label)")
+        .accessibilityLabel("Editor mode")
+        .accessibilityValue(tab.editorMode.label)
     }
 
     private func toolbarButton(
@@ -194,7 +221,7 @@ struct NoteEditorView: View {
     private func statusBadge(_ tab: NoteTab) -> some View {
         let label = workspace.saveFlash
             ? "Saved"
-            : (tab.isDirty ? "Edited" : (tab.showPreview ? "Preview" : "Ready"))
+            : "Edited"
 
         return HStack(spacing: 4) {
             Circle()
@@ -518,7 +545,7 @@ struct NoteEditorView: View {
     @ViewBuilder
     private var editorArea: some View {
         if let tab = workspace.selectedTab {
-            if tab.showPreview {
+            if tab.editorMode == .preview {
                 ScrollView {
                     if tab.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                         VStack(spacing: 10) {
@@ -535,7 +562,7 @@ struct NoteEditorView: View {
                             Text("Return to the editor and start writing in Markdown.")
                                 .font(.system(size: 11.5))
                                 .foregroundStyle(QuivPalette.muted.opacity(0.75))
-                            Button("Return to editor") { workspace.togglePreview() }
+                            Button("Return to WYSIWYG") { workspace.setEditorMode(.wysiwyg) }
                                 .buttonStyle(.plain)
                                 .font(.system(size: 11, weight: .semibold))
                                 .foregroundStyle(QuivPalette.accent)
@@ -546,7 +573,7 @@ struct NoteEditorView: View {
                         .frame(maxWidth: .infinity, alignment: .center)
                         .padding(.top, 72)
                     } else {
-                        Markdown(tab.text)
+                        Markdown(markdownForPreview(tab.text))
                             .markdownTheme(.quivPreview)
                             .textSelection(.enabled)
                             .padding(.horizontal, 32)
@@ -566,6 +593,7 @@ struct NoteEditorView: View {
                             }
                         ),
                         showLineNumbers: tab.showLineNumbers,
+                        mode: tab.editorMode,
                         tabID: tab.id,
                         onStatus: { workspace.setFindStatus($0) }
                     )
@@ -576,7 +604,9 @@ struct NoteEditorView: View {
                             Text("Start writing…")
                                 .font(.system(size: 15.5))
                                 .foregroundStyle(QuivPalette.muted.opacity(0.52))
-                            Text("Markdown is supported  ·  Hold ⌘ for shortcuts")
+                            Text(tab.editorMode == .wysiwyg
+                                 ? "Formatting appears as you complete Markdown  ·  Hold ⌘ for shortcuts"
+                                 : "Markdown source  ·  Hold ⌘ for shortcuts")
                                 .font(.system(size: 10.5, weight: .medium))
                                 .foregroundStyle(QuivPalette.muted.opacity(0.46))
                         }
@@ -588,6 +618,16 @@ struct NoteEditorView: View {
                 }
             }
         }
+    }
+
+    private func markdownForPreview(_ source: String) -> String {
+        // MarkdownUI currently renders arbitrary inline HTML literally. Keep the
+        // portable <u> source while avoiding visible tags in read-only preview.
+        source.replacingOccurrences(
+            of: #"(?i)</?u>"#,
+            with: "",
+            options: .regularExpression
+        )
     }
 }
 
