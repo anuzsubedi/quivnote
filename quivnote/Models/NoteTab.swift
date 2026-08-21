@@ -6,6 +6,31 @@
 import Foundation
 import Observation
 
+enum NoteEditorMode: String, Codable, CaseIterable, Identifiable {
+    case wysiwyg
+    case preview
+    case editor
+
+    var id: Self { self }
+
+    var label: String {
+        switch self {
+        case .wysiwyg: "WYSIWYG"
+        case .preview: "Preview"
+        case .editor: "Editor"
+        }
+    }
+
+    var icon: String {
+        switch self {
+        case .wysiwyg: "textformat"
+        case .preview: "doc.richtext"
+        case .editor: "chevron.left.forwardslash.chevron.right"
+        }
+    }
+
+}
+
 @Observable
 @MainActor
 final class NoteTab: Identifiable {
@@ -23,7 +48,7 @@ final class NoteTab: Identifiable {
         }
     }
     var isDirty: Bool
-    var showPreview: Bool
+    var editorMode: NoteEditorMode
     var showLineNumbers: Bool
 
     var displayTitle: String {
@@ -37,7 +62,7 @@ final class NoteTab: Identifiable {
         title: String = "Untitled",
         text: String = "",
         isDirty: Bool = false,
-        showPreview: Bool = false,
+        editorMode: NoteEditorMode = .wysiwyg,
         showLineNumbers: Bool = false
     ) {
         self.id = id
@@ -45,8 +70,7 @@ final class NoteTab: Identifiable {
         self.title = title
         self.text = text
         self.isDirty = isDirty
-        self.showPreview = showPreview
+        self.editorMode = editorMode
         self.showLineNumbers = showLineNumbers
     }
 }
-

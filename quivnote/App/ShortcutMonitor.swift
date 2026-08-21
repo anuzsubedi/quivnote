@@ -6,7 +6,7 @@
 import AppKit
 import Carbon.HIToolbox
 
-/// Menu key-equivalents are unreliable for accessory / MenuBarExtra apps.
+/// Menu key-equivalents are unreliable for accessory menu-bar apps.
 /// This local monitor is the source of truth while the note panel is key.
 @MainActor
 final class ShortcutMonitor {
@@ -156,6 +156,27 @@ final class ShortcutMonitor {
 
         guard cmd else { return event }
 
+        // Accessory-app menu key equivalents are unreliable, so route standard
+        // editing commands directly through the current first-responder chain.
+        if !opt && !ctrl {
+            let action: Selector?
+            switch (key, shift) {
+            case ("x", false): action = #selector(NSText.cut(_:))
+            case ("c", false): action = #selector(NSText.copy(_:))
+            case ("v", false): action = #selector(NSText.paste(_:))
+            case ("a", false): action = #selector(NSText.selectAll(_:))
+            case ("z", false): action = Selector(("undo:"))
+            case ("z", true): action = Selector(("redo:"))
+            case ("b", false): action = Selector(("quivToggleBold:"))
+            case ("i", false): action = Selector(("quivToggleItalic:"))
+            case ("u", false): action = Selector(("quivToggleUnderline:"))
+            default: action = nil
+            }
+            if let action, panel.performEditingAction(action) {
+                return nil
+            }
+        }
+
         // ⌘⌥⇧N is owned by HotKeyManager (global)
         if opt && shift && key == "n" {
             return event
@@ -203,7 +224,7 @@ final class ShortcutMonitor {
             workspace.showFind(replace: true)
             return nil
         case ("m", false, false, false):
-            workspace.togglePreview()
+            workspace.cycleEditorMode()
             NotificationCenter.default.post(name: .quivFocusEditor, object: nil)
             return nil
         case ("l", false, false, false):

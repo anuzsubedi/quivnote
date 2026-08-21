@@ -44,6 +44,13 @@ final class NotePanelController {
         return panel.isVisible && (panel.isKeyWindow || NSApp.keyWindow === panel)
     }
 
+    @discardableResult
+    func performEditingAction(_ action: Selector) -> Bool {
+        guard let responder = panel?.firstResponder else { return false }
+        if NSApp.sendAction(action, to: responder, from: nil) { return true }
+        return NSApp.sendAction(action, to: nil, from: nil)
+    }
+
     func toggle() {
         if let panel, panel.isVisible {
             hide()

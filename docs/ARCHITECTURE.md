@@ -18,7 +18,7 @@ Quivnote is a small AppKit/SwiftUI macOS application organized around a single o
 
 ### Views
 
-`NoteEditorView` is the main screen. Feature overlays remain separate views, while `NoteTextView` bridges the native `NSTextView` editor into SwiftUI.
+`NoteEditorView` is the main screen. Feature overlays remain separate views, while `NoteTextView` bridges the native `NSTextView` editor into SwiftUI. Tabs select among WYSIWYG, rendered preview, and Markdown editor modes; the backing model remains plaintext Markdown in every mode.
 
 ## Data flow
 
@@ -41,4 +41,3 @@ User actions flow from menus, shortcut handlers, or views into `Workspace`. Obse
 ## Dependency policy
 
 Third-party packages should be added only when the platform SDK does not provide a clear solution. Pin resolved versions through Swift Package Manager and document each dependency in the README.
-

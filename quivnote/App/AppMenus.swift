@@ -66,6 +66,14 @@ enum AppMenus {
         editMenu.addItem(withTitle: "Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
         editMenu.addItem(withTitle: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
         editMenu.addItem(NSMenuItem.separator())
+        let formatMenu = NSMenu(title: "Format")
+        let formatItem = NSMenuItem(title: "Format", action: nil, keyEquivalent: "")
+        formatItem.submenu = formatMenu
+        editMenu.addItem(formatItem)
+        formatMenu.addItem(withTitle: "Bold", action: Selector(("quivToggleBold:")), keyEquivalent: "b")
+        formatMenu.addItem(withTitle: "Italic", action: Selector(("quivToggleItalic:")), keyEquivalent: "i")
+        formatMenu.addItem(withTitle: "Underline", action: Selector(("quivToggleUnderline:")), keyEquivalent: "u")
+        editMenu.addItem(NSMenuItem.separator())
         editMenu.addItem(retain(MenuAction(title: "Find…             ⌘F") {
             panel.show(); workspace.showFind(replace: false)
         }))
@@ -81,9 +89,9 @@ enum AppMenus {
         viewMenu.addItem(retain(MenuAction(title: "Shortcuts         ⌘/") {
             panel.show(); workspace.toggleShortcutsPinned()
         }))
-        viewMenu.addItem(retain(MenuAction(title: "Markdown Preview  ⌘M") {
+        viewMenu.addItem(retain(MenuAction(title: "Cycle Editor Mode  ⌘M") {
             panel.show()
-            workspace.togglePreview()
+            workspace.cycleEditorMode()
             NotificationCenter.default.post(name: .quivFocusEditor, object: nil)
         }))
         viewMenu.addItem(retain(MenuAction(title: "Line Numbers      ⌘L") {
