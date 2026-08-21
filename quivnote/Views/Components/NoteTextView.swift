@@ -28,7 +28,7 @@ struct NoteTextView: NSViewRepresentable {
         let textView = NSTextView()
         textView.delegate = context.coordinator
         textView.string = text
-        textView.font = .systemFont(ofSize: 15)
+        textView.font = .systemFont(ofSize: 15.5)
         textView.textColor = QuivPalette.nsInk
         textView.insertionPointColor = QuivPalette.nsAccent
         textView.backgroundColor = .clear
@@ -46,12 +46,13 @@ struct NoteTextView: NSViewRepresentable {
         textView.textContainer?.containerSize = NSSize(width: scroll.contentSize.width, height: .greatestFiniteMagnitude)
         textView.minSize = NSSize(width: 0, height: 0)
         textView.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: .greatestFiniteMagnitude)
-        textView.textContainerInset = NSSize(width: 12, height: 14)
+        textView.textContainerInset = NSSize(width: 22, height: 22)
 
         // Better line spacing
         textView.defaultParagraphStyle = {
             let style = NSMutableParagraphStyle()
-            style.lineSpacing = 3
+            style.lineSpacing = 4
+            style.paragraphSpacing = 2
             return style
         }()
 
@@ -61,10 +62,6 @@ struct NoteTextView: NSViewRepresentable {
         context.coordinator.applyLineNumbers(showLineNumbers)
         context.coordinator.applyInlineHighlight()
         context.coordinator.observeNotifications(tabID: tabID)
-
-        DispatchQueue.main.async {
-            textView.window?.makeFirstResponder(textView)
-        }
 
         return scroll
     }
@@ -89,6 +86,8 @@ struct NoteTextView: NSViewRepresentable {
         context.coordinator.applyLineNumbers(showLineNumbers)
         textView.textColor = QuivPalette.nsInk
         textView.insertionPointColor = QuivPalette.nsAccent
+        textView.setAccessibilityLabel("Markdown note editor")
+        textView.setAccessibilityHelp("Write plain text or Markdown")
     }
 
     final class Coordinator: NSObject, NSTextViewDelegate {
@@ -156,6 +155,14 @@ struct NoteTextView: NSViewRepresentable {
                 guard let textView = self?.textView else { return }
                 textView.window?.makeFirstResponder(textView)
             })
+
+            observers.append(center.addObserver(forName: .quivAppearanceChanged, object: nil, queue: .main) { [weak self] _ in
+                guard let self, let textView = self.textView else { return }
+                textView.textColor = QuivPalette.nsInk
+                textView.insertionPointColor = QuivPalette.nsAccent
+                self.applyInlineHighlight()
+                self.ruler?.needsDisplay = true
+            })
         }
 
         func textDidChange(_ notification: Notification) {
@@ -173,7 +180,7 @@ struct NoteTextView: NSViewRepresentable {
             storage.removeAttribute(.font, range: full)
             storage.removeAttribute(.backgroundColor, range: full)
             storage.addAttribute(.foregroundColor, value: QuivPalette.nsInk, range: full)
-            storage.addAttribute(.font, value: NSFont.systemFont(ofSize: 15), range: full)
+            storage.addAttribute(.font, value: NSFont.systemFont(ofSize: 15.5), range: full)
 
             let ns = storage.string as NSString
 
@@ -185,15 +192,15 @@ struct NoteTextView: NSViewRepresentable {
                     let hashRange = match.range(at: 1)
                     let textRange = match.range(at: 2)
                     storage.addAttribute(.foregroundColor, value: QuivPalette.nsAccent, range: textRange)
-                    storage.addAttribute(.font, value: NSFont.systemFont(ofSize: 15, weight: .bold), range: textRange)
+                    storage.addAttribute(.font, value: NSFont.systemFont(ofSize: 15.5, weight: .bold), range: textRange)
                     storage.addAttribute(.foregroundColor, value: QuivPalette.nsMuted.withAlphaComponent(0.5), range: hashRange)
                 }
             }
 
             let patterns: [(String, NSFont, NSColor?)] = [
-                (#"\*\*(.+?)\*\*"#, .systemFont(ofSize: 15, weight: .semibold), nil),
-                (#"(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)"#, .systemFont(ofSize: 15).withItalicTrait, nil),
-                (#"`([^`]+)`"#, .systemFont(ofSize: 15), QuivPalette.nsAccent.withAlphaComponent(0.12)),
+                (#"\*\*(.+?)\*\*"#, .systemFont(ofSize: 15.5, weight: .semibold), nil),
+                (#"(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)"#, .systemFont(ofSize: 15.5).withItalicTrait, nil),
+                (#"`([^`]+)`"#, .monospacedSystemFont(ofSize: 14.5, weight: .regular), QuivPalette.nsAccent.withAlphaComponent(0.12)),
             ]
 
             for (pattern, font, background) in patterns {
@@ -220,6 +227,10 @@ struct NoteTextView: NSViewRepresentable {
                 }
             }
             storage.endEditing()
+            textView.typingAttributes = [
+                .font: NSFont.systemFont(ofSize: 15.5),
+                .foregroundColor: QuivPalette.nsInk,
+            ]
         }
 
         func find(query: String, forward: Bool) {

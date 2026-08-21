@@ -7,10 +7,15 @@ import MarkdownUI
 import SwiftUI
 
 struct NoteEditorView: View {
+    private enum SearchField: Hashable { case find, replace }
+
     @Bindable var workspace: Workspace
     var focus: PanelFocus
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @FocusState private var focusedSearchField: SearchField?
     @State private var hoveredTabID: UUID?
+    @State private var hoveredToolbarItem: String?
 
     var body: some View {
         let currentAccent = AppearanceSettings.shared.accentChoice
@@ -39,7 +44,10 @@ struct NoteEditorView: View {
             }
 
             if workspace.shortcutsVisible {
-                ShortcutsOverlay(pinned: workspace.shortcutsPinned)
+                ShortcutsOverlay(pinned: workspace.shortcutsPinned) {
+                    workspace.shortcutsPinned = false
+                    workspace.hideShortcutsOverlay(force: true)
+                }
                     .transition(.opacity.combined(with: .scale(scale: 0.97)))
             }
 
@@ -48,11 +56,11 @@ struct NoteEditorView: View {
                     .transition(.opacity.combined(with: .scale(scale: 0.97)))
             }
         }
-        .id(currentAccent)
-        .animation(.easeOut(duration: 0.2), value: workspace.shortcutsVisible)
-        .animation(.easeOut(duration: 0.2), value: workspace.libraryVisible)
-        .animation(.easeOut(duration: 0.2), value: workspace.settingsVisible)
-        .animation(.easeOut(duration: 0.18), value: workspace.pendingCloseTabID)
+        .tint(currentAccent.color)
+        .animation(reduceMotion ? nil : .easeOut(duration: 0.2), value: workspace.shortcutsVisible)
+        .animation(reduceMotion ? nil : .easeOut(duration: 0.2), value: workspace.libraryVisible)
+        .animation(reduceMotion ? nil : .easeOut(duration: 0.2), value: workspace.settingsVisible)
+        .animation(reduceMotion ? nil : .easeOut(duration: 0.18), value: workspace.pendingCloseTabID)
         .frame(minWidth: 520, minHeight: 360)
         .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
         .overlay {
@@ -72,6 +80,9 @@ struct NoteEditorView: View {
         }
         .onChange(of: focus.generation) { _, _ in
             NotificationCenter.default.post(name: .quivFocusEditor, object: nil)
+        }
+        .onChange(of: workspace.findVisible) { _, visible in
+            focusedSearchField = visible ? .find : nil
         }
     }
 
@@ -106,16 +117,21 @@ struct NoteEditorView: View {
     // MARK: - Chrome Header
 
     private var chromeHeader: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: 8) {
             // App wordmark
             HStack(spacing: 5) {
-                Image(systemName: "pencil.line")
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(QuivPalette.accent.opacity(0.7))
+                ZStack {
+                    RoundedRectangle(cornerRadius: 5, style: .continuous)
+                        .fill(QuivPalette.accent.opacity(0.14))
+                    Image(systemName: "pencil.line")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(QuivPalette.accent)
+                }
+                .frame(width: 22, height: 22)
                 Text("quivnote")
-                    .font(.system(size: 11.5, weight: .semibold, design: .monospaced))
-                    .tracking(0.5)
-                    .foregroundStyle(QuivPalette.muted)
+                    .font(.system(size: 12, weight: .semibold, design: .rounded))
+                    .tracking(0.15)
+                    .foregroundStyle(QuivPalette.ink.opacity(0.78))
             }
 
             Spacer()
@@ -124,20 +140,55 @@ struct NoteEditorView: View {
                 statusBadge(tab)
             }
 
-            Button {
-                workspace.showSettings()
-            } label: {
-                Image(systemName: "gearshape")
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundStyle(QuivPalette.muted.opacity(0.5))
-                    .frame(width: 22, height: 22)
-                    .background(QuivPalette.ink.opacity(0.04), in: RoundedRectangle(cornerRadius: 5))
+            if let tab = workspace.selectedTab {
+                toolbarButton(
+                    tab.showPreview ? "square.and.pencil" : "doc.richtext",
+                    id: "preview",
+                    label: tab.showPreview ? "Return to Editor" : "Show Markdown Preview",
+                    active: tab.showPreview
+                ) {
+                    workspace.togglePreview()
+                }
+                .help(tab.showPreview ? "Return to Editor (⌘M)" : "Markdown Preview (⌘M)")
             }
-            .buttonStyle(.plain)
+
+            toolbarButton("gearshape", id: "settings", label: "Open Appearance Settings", active: workspace.settingsVisible) {
+                workspace.showSettings()
+            }
             .help("Appearance (⌘,)")
         }
         .padding(.horizontal, 16)
-        .padding(.vertical, 9)
+        .padding(.vertical, 8)
+        .background(QuivPalette.chrome.opacity(0.45))
+    }
+
+    private func toolbarButton(
+        _ icon: String,
+        id: String,
+        label: String,
+        active: Bool,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Image(systemName: icon)
+                .font(.system(size: 11, weight: active ? .semibold : .medium))
+                .foregroundStyle(active ? QuivPalette.accent : QuivPalette.muted.opacity(0.78))
+                .frame(width: 26, height: 26)
+                .background(
+                    active
+                        ? QuivPalette.selection
+                        : (hoveredToolbarItem == id ? QuivPalette.controlHover : QuivPalette.control),
+                    in: RoundedRectangle(cornerRadius: 6, style: .continuous)
+                )
+                .overlay {
+                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                        .strokeBorder(active ? QuivPalette.accent.opacity(0.22) : .clear, lineWidth: 0.5)
+                }
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering in hoveredToolbarItem = hovering ? id : nil }
+        .accessibilityLabel(label)
+        .accessibilityValue(active ? "On" : "Off")
     }
 
     private func statusBadge(_ tab: NoteTab) -> some View {
@@ -148,7 +199,7 @@ struct NoteEditorView: View {
         return HStack(spacing: 4) {
             Circle()
                 .fill(
-                    workspace.saveFlash ? Color.green.opacity(0.8) :
+                    workspace.saveFlash ? QuivPalette.success :
                     tab.isDirty ? QuivPalette.accent.opacity(0.8) :
                     QuivPalette.muted.opacity(0.4)
                 )
@@ -156,14 +207,15 @@ struct NoteEditorView: View {
             Text(label)
                 .font(.system(size: 10, weight: .medium, design: .monospaced))
                 .foregroundStyle(
-                    workspace.saveFlash ? Color.green.opacity(0.8) :
+                    workspace.saveFlash ? QuivPalette.success :
                     tab.isDirty ? QuivPalette.accent.opacity(0.8) :
                     QuivPalette.muted.opacity(0.6)
                 )
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 3)
-        .background(QuivPalette.ink.opacity(0.04), in: Capsule())
+        .background(QuivPalette.control, in: Capsule())
+        .accessibilityElement(children: .combine)
     }
 
     // MARK: - Tab Bar
@@ -190,8 +242,9 @@ struct NoteEditorView: View {
                 .help("New Tab (⌘T)")
             }
             .padding(.horizontal, 10)
-            .padding(.vertical, 5)
+            .padding(.vertical, 6)
         }
+        .background(QuivPalette.chrome.opacity(0.32))
     }
 
     private func tabChip(_ tab: NoteTab) -> some View {
@@ -226,7 +279,10 @@ struct NoteEditorView: View {
                         .foregroundStyle(QuivPalette.muted.opacity(hovered || selected ? 0.7 : 0.3))
                 }
                 .buttonStyle(.plain)
-                .padding(.trailing, 6)
+                .help("Close \(tab.displayTitle)")
+                .accessibilityLabel("Close \(tab.displayTitle)")
+                .frame(width: 24, height: 24)
+                .padding(.trailing, 3)
             }
         }
         .background(
@@ -247,6 +303,8 @@ struct NoteEditorView: View {
         .onHover { isHovered in
             hoveredTabID = isHovered ? tab.id : nil
         }
+        .help(tab.displayTitle)
+        .accessibilityElement(children: .contain)
     }
 
     // MARK: - Find / Replace Bar
@@ -257,7 +315,7 @@ struct NoteEditorView: View {
                 Image(systemName: "magnifyingglass")
                     .font(.system(size: 11))
                     .foregroundStyle(QuivPalette.muted.opacity(0.6))
-                TextField("Find…", text: $workspace.findQuery)
+                    TextField("Find…", text: $workspace.findQuery)
                     .textFieldStyle(.plain)
                     .font(.system(size: 12, design: .monospaced))
                     .padding(.horizontal, 8)
@@ -268,6 +326,8 @@ struct NoteEditorView: View {
                             .strokeBorder(QuivPalette.border, lineWidth: 0.5)
                     )
                     .foregroundStyle(QuivPalette.ink)
+                    .focused($focusedSearchField, equals: .find)
+                    .accessibilityLabel("Find in note")
                     .onSubmit { workspace.findNext(forward: true) }
 
                 findButton("Next", icon: "chevron.down") { workspace.findNext(forward: true) }
@@ -291,6 +351,7 @@ struct NoteEditorView: View {
                         .background(QuivPalette.ink.opacity(0.04), in: Circle())
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel("Close Find")
             }
 
             if workspace.replaceVisible {
@@ -309,6 +370,8 @@ struct NoteEditorView: View {
                                 .strokeBorder(QuivPalette.border, lineWidth: 0.5)
                         )
                         .foregroundStyle(QuivPalette.ink)
+                        .focused($focusedSearchField, equals: .replace)
+                        .accessibilityLabel("Replace with")
 
                     findButton("Replace", icon: "arrow.uturn.right") { workspace.replaceOne() }
                     findButton("All", icon: "arrow.triangle.2.circlepath") { workspace.replaceAll() }
@@ -409,7 +472,7 @@ struct NoteEditorView: View {
                     .font(.system(size: 9, weight: .semibold, design: .monospaced))
                     .foregroundStyle(
                         prominent
-                            ? QuivPalette.base.opacity(focused ? 0.8 : 0.6)
+                            ? QuivPalette.onAccent.opacity(focused ? 0.9 : 0.72)
                             : QuivPalette.muted.opacity(focused ? 0.9 : 0.5)
                     )
                     .padding(.horizontal, 4)
@@ -420,7 +483,7 @@ struct NoteEditorView: View {
                         in: RoundedRectangle(cornerRadius: 3, style: .continuous)
                     )
             }
-            .foregroundStyle(prominent ? QuivPalette.base : QuivPalette.ink.opacity(0.85))
+            .foregroundStyle(prominent ? QuivPalette.onAccent : QuivPalette.ink.opacity(0.85))
             .padding(.horizontal, 10)
             .padding(.vertical, 6)
             .background {
@@ -458,39 +521,71 @@ struct NoteEditorView: View {
             if tab.showPreview {
                 ScrollView {
                     if tab.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                        VStack(spacing: 8) {
-                            Image(systemName: "doc.text")
-                                .font(.system(size: 28, weight: .light))
-                                .foregroundStyle(QuivPalette.muted.opacity(0.3))
-                            Text("Nothing to preview")
-                                .font(.system(size: 13, weight: .medium))
-                                .foregroundStyle(QuivPalette.muted.opacity(0.5))
+                        VStack(spacing: 10) {
+                            ZStack {
+                                Circle().fill(QuivPalette.accent.opacity(0.10))
+                                Image(systemName: "text.page")
+                                    .font(.system(size: 22, weight: .light))
+                                    .foregroundStyle(QuivPalette.accent.opacity(0.7))
+                            }
+                            .frame(width: 52, height: 52)
+                            Text("Nothing to preview yet")
+                                .font(.system(size: 14, weight: .semibold))
+                                .foregroundStyle(QuivPalette.ink.opacity(0.75))
+                            Text("Return to the editor and start writing in Markdown.")
+                                .font(.system(size: 11.5))
+                                .foregroundStyle(QuivPalette.muted.opacity(0.75))
+                            Button("Return to editor") { workspace.togglePreview() }
+                                .buttonStyle(.plain)
+                                .font(.system(size: 11, weight: .semibold))
+                                .foregroundStyle(QuivPalette.accent)
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 6)
+                                .background(QuivPalette.selection, in: RoundedRectangle(cornerRadius: 6))
                         }
                         .frame(maxWidth: .infinity, alignment: .center)
-                        .padding(.top, 80)
+                        .padding(.top, 72)
                     } else {
                         Markdown(tab.text)
                             .markdownTheme(.quivPreview)
                             .textSelection(.enabled)
-                            .padding(.horizontal, 24)
-                            .padding(.vertical, 20)
-                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .padding(.horizontal, 32)
+                            .padding(.vertical, 28)
+                            .frame(maxWidth: 760, alignment: .leading)
+                            .frame(maxWidth: .infinity, alignment: .center)
                     }
                 }
             } else {
-                NoteTextView(
-                    text: Binding(
-                        get: { tab.text },
-                        set: {
-                            tab.text = $0
-                            workspace.persist()
+                ZStack(alignment: .topLeading) {
+                    NoteTextView(
+                        text: Binding(
+                            get: { tab.text },
+                            set: {
+                                tab.text = $0
+                                workspace.persist()
+                            }
+                        ),
+                        showLineNumbers: tab.showLineNumbers,
+                        tabID: tab.id,
+                        onStatus: { workspace.setFindStatus($0) }
+                    )
+                    .padding(.horizontal, 2)
+
+                    if tab.text.isEmpty {
+                        VStack(alignment: .leading, spacing: 5) {
+                            Text("Start writing…")
+                                .font(.system(size: 15.5))
+                                .foregroundStyle(QuivPalette.muted.opacity(0.52))
+                            Text("Markdown is supported  ·  Hold ⌘ for shortcuts")
+                                .font(.system(size: 10.5, weight: .medium))
+                                .foregroundStyle(QuivPalette.muted.opacity(0.46))
                         }
-                    ),
-                    showLineNumbers: tab.showLineNumbers,
-                    tabID: tab.id,
-                    onStatus: { workspace.setFindStatus($0) }
-                )
-                .padding(.horizontal, 2)
+                        .padding(.leading, tab.showLineNumbers ? 66 : 26)
+                        .padding(.top, 22)
+                        .allowsHitTesting(false)
+                        .accessibilityHidden(true)
+                    }
+                }
             }
         }
     }

@@ -9,6 +9,7 @@ struct LibraryBrowser: View {
     @Bindable var workspace: Workspace
 
     @State private var hoveredNoteID: UUID?
+    @FocusState private var renamingNoteID: UUID?
 
     private let dateFormat: DateFormatter = {
         let f = DateFormatter()
@@ -20,7 +21,7 @@ struct LibraryBrowser: View {
 
     var body: some View {
         ZStack {
-            Color.black.opacity(0.45)
+            QuivPalette.scrim
                 .ignoresSafeArea()
                 .onTapGesture { workspace.hideLibrary() }
 
@@ -59,12 +60,15 @@ struct LibraryBrowser: View {
                         lineWidth: 0.5
                     )
             }
-            .shadow(color: .black.opacity(0.5), radius: 40, y: 16)
+            .shadow(color: .black.opacity(0.38), radius: 34, y: 18)
             .padding(28)
         }
         .transition(.opacity.combined(with: .scale(scale: 0.97)))
         .onChange(of: workspace.libraryQuery) { _, _ in
             workspace.syncLibraryFocus()
+        }
+        .onChange(of: workspace.libraryRenamingID) { _, noteID in
+            renamingNoteID = noteID
         }
     }
 
@@ -85,7 +89,7 @@ struct LibraryBrowser: View {
                         .font(.system(size: 17, weight: .bold, design: .default))
                         .foregroundStyle(QuivPalette.ink)
                 }
-                Text("\(workspace.library.notes.count) notes")
+                Text(workspace.library.notes.count == 1 ? "1 note" : "\(workspace.library.notes.count) notes")
                     .font(.system(size: 11, weight: .medium, design: .monospaced))
                     .foregroundStyle(QuivPalette.muted.opacity(0.7))
             }
@@ -101,6 +105,7 @@ struct LibraryBrowser: View {
                     .overlay(Circle().strokeBorder(QuivPalette.border, lineWidth: 0.5))
             }
             .buttonStyle(.plain)
+            .help("Close Library")
         }
         .padding(.horizontal, 20)
         .padding(.top, 16)
@@ -114,7 +119,7 @@ struct LibraryBrowser: View {
                 .foregroundStyle(QuivPalette.muted.opacity(0.5))
             Text(workspace.libraryQuery.isEmpty ? "Type to search…" : workspace.libraryQuery)
                 .font(.system(size: 13, design: .monospaced))
-                .foregroundStyle(workspace.libraryQuery.isEmpty ? QuivPalette.muted.opacity(0.4) : QuivPalette.ink)
+                .foregroundStyle(workspace.libraryQuery.isEmpty ? QuivPalette.muted.opacity(0.62) : QuivPalette.ink)
                 .frame(maxWidth: .infinity, alignment: .leading)
             if !workspace.libraryQuery.isEmpty {
                 Text("⌫")
@@ -143,7 +148,7 @@ struct LibraryBrowser: View {
                         .foregroundStyle(QuivPalette.muted.opacity(0.6))
                     Text(workspace.library.notes.isEmpty ? "Press ⌘S to save the current note" : "Try another search")
                         .font(.system(size: 12, weight: .regular))
-                        .foregroundStyle(QuivPalette.muted.opacity(0.35))
+                        .foregroundStyle(QuivPalette.muted.opacity(0.68))
                     Spacer()
                 }
                 .frame(maxWidth: .infinity)
@@ -216,24 +221,15 @@ struct LibraryBrowser: View {
         let isHovered = hoveredNoteID == note.id
 
         return HStack(alignment: .top, spacing: 10) {
-            Button {
-                workspace.libraryFocusID = note.id
-                workspace.openLibraryNote(note)
-            } label: {
+            if isRenaming {
                 VStack(alignment: .leading, spacing: 4) {
-                    if isRenaming {
-                        TextField("Title", text: $workspace.libraryRenameDraft)
-                            .textFieldStyle(.plain)
-                            .font(.system(size: 13, weight: .semibold))
-                            .foregroundStyle(QuivPalette.ink)
-                            .onSubmit { workspace.commitLibraryRename() }
-                    } else {
-                        Text(note.title)
-                            .font(.system(size: 13, weight: .semibold))
-                            .foregroundStyle(isFocused ? QuivPalette.ink : QuivPalette.ink.opacity(0.85))
-                            .lineLimit(1)
-                    }
-
+                    TextField("Title", text: $workspace.libraryRenameDraft)
+                        .textFieldStyle(.plain)
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(QuivPalette.ink)
+                        .focused($renamingNoteID, equals: note.id)
+                        .accessibilityLabel("Rename note")
+                        .onSubmit { workspace.commitLibraryRename() }
                     Text(note.preview)
                         .font(.system(size: 11.5, weight: .regular))
                         .foregroundStyle(QuivPalette.muted.opacity(0.7))
@@ -241,12 +237,35 @@ struct LibraryBrowser: View {
 
                     Text(dateFormat.string(from: note.updatedAt))
                         .font(.system(size: 10, weight: .regular, design: .monospaced))
-                        .foregroundStyle(QuivPalette.muted.opacity(0.4))
+                        .foregroundStyle(QuivPalette.muted.opacity(0.62))
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .contentShape(Rectangle())
+            } else {
+                Button {
+                    workspace.libraryFocusID = note.id
+                    workspace.openLibraryNote(note)
+                } label: {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(note.title)
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(isFocused ? QuivPalette.ink : QuivPalette.ink.opacity(0.85))
+                            .lineLimit(1)
+                        Text(note.preview)
+                            .font(.system(size: 11.5, weight: .regular))
+                            .foregroundStyle(QuivPalette.muted.opacity(0.7))
+                            .lineLimit(2)
+                        Text(dateFormat.string(from: note.updatedAt))
+                            .font(.system(size: 10, weight: .regular, design: .monospaced))
+                            .foregroundStyle(QuivPalette.muted.opacity(0.62))
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("\(note.title), \(note.preview)")
+                .accessibilityValue(isOpen ? "Open" : "")
+                .accessibilityHint("Open note")
             }
-            .buttonStyle(.plain)
 
             if isOpen {
                 HStack(spacing: 3) {

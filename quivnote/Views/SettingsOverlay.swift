@@ -7,11 +7,12 @@ import SwiftUI
 
 struct SettingsOverlay: View {
     @Bindable var workspace: Workspace
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     private var settings: AppearanceSettings { AppearanceSettings.shared }
 
     var body: some View {
         ZStack {
-            Color.black.opacity(0.45)
+            QuivPalette.scrim
                 .ignoresSafeArea()
                 .onTapGesture { workspace.hideSettings() }
 
@@ -48,7 +49,7 @@ struct SettingsOverlay: View {
                         lineWidth: 0.5
                     )
             }
-            .shadow(color: .black.opacity(0.5), radius: 40, y: 16)
+            .shadow(color: .black.opacity(0.38), radius: 34, y: 18)
             .padding(40)
         }
         .transition(.opacity.combined(with: .scale(scale: 0.97)))
@@ -84,6 +85,7 @@ struct SettingsOverlay: View {
                     .overlay(Circle().strokeBorder(QuivPalette.border, lineWidth: 0.5))
             }
             .buttonStyle(.plain)
+            .help("Close Appearance")
         }
         .padding(.horizontal, 20)
         .padding(.top, 16)
@@ -191,6 +193,8 @@ struct SettingsOverlay: View {
             )
         }
         .buttonStyle(.plain)
+        .accessibilityLabel("\(mode.label) appearance")
+        .accessibilityValue(selected ? "Selected" : "")
     }
 
     // MARK: - Accent Swatch
@@ -202,24 +206,28 @@ struct SettingsOverlay: View {
         } label: {
             ZStack {
                 Circle()
-                    .fill(choice.color)
+                    .fill(choice.swatchColor)
                     .frame(width: 28, height: 28)
-                    .shadow(color: choice.color.opacity(selected ? 0.4 : 0), radius: 6, y: 2)
+                    .shadow(color: choice.swatchColor.opacity(selected ? 0.3 : 0), radius: 6, y: 2)
 
                 if selected {
                     Image(systemName: "checkmark")
                         .font(.system(size: 11, weight: .bold))
-                        .foregroundStyle(.white)
+                        .foregroundStyle(.black.opacity(0.72))
                 }
             }
+            .frame(width: 38, height: 38)
             .overlay(
                 Circle()
                     .strokeBorder(.white.opacity(selected ? 0.3 : 0.1), lineWidth: selected ? 1.5 : 0.5)
             )
             .scaleEffect(selected ? 1.1 : 1)
-            .animation(.easeOut(duration: 0.15), value: settings.accentChoice)
+            .animation(reduceMotion ? nil : .easeOut(duration: 0.15), value: settings.accentChoice)
         }
         .buttonStyle(.plain)
+        .help(choice.label)
+        .accessibilityLabel("\(choice.label) accent")
+        .accessibilityValue(selected ? "Selected" : "")
     }
 }
 

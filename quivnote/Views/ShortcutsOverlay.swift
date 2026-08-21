@@ -7,6 +7,7 @@ import SwiftUI
 
 struct ShortcutsOverlay: View {
     var pinned: Bool
+    var onDismiss: () -> Void
 
     private let sections: [(title: String, rows: [(keys: [String], label: String)])] = [
         (
@@ -15,7 +16,7 @@ struct ShortcutsOverlay: View {
                 (["⌘", "⌥", "⇧", "N"], "Show / hide note"),
                 (["⌘", ","], "Appearance"),
                 (["⌘", "/"], "Pin this sheet"),
-                (["esc"], "Dismiss"),
+                (["Esc"], "Dismiss"),
                 (["⌘", "Q"], "Quit"),
             ]
         ),
@@ -26,7 +27,7 @@ struct ShortcutsOverlay: View {
                 (["⌘", "W"], "Close tab"),
                 (["⌘", "⇧", "]"], "Next tab"),
                 (["⌘", "⇧", "["], "Previous tab"),
-                (["⌃", "tab"], "Cycle tabs"),
+                (["⌃", "Tab"], "Cycle tabs"),
                 (["⌘", "O"], "Open library"),
                 (["⌘", "S"], "Save to library"),
                 (["⌘", "⇧", "I"], "Import file"),
@@ -46,8 +47,9 @@ struct ShortcutsOverlay: View {
 
     var body: some View {
         ZStack {
-            Color.black.opacity(0.42)
+            QuivPalette.scrim
                 .ignoresSafeArea()
+                .onTapGesture(perform: onDismiss)
 
             VStack(spacing: 0) {
                 header
@@ -81,7 +83,7 @@ struct ShortcutsOverlay: View {
                         lineWidth: 0.5
                     )
             }
-            .shadow(color: .black.opacity(0.5), radius: 40, y: 16)
+            .shadow(color: .black.opacity(0.38), radius: 34, y: 18)
             .padding(28)
         }
         .transition(
@@ -112,7 +114,19 @@ struct ShortcutsOverlay: View {
                     .foregroundStyle(QuivPalette.muted.opacity(0.6))
             }
             Spacer()
-            HoldHint(pinned: pinned)
+            HStack(spacing: 8) {
+                HoldHint(pinned: pinned)
+                Button(action: onDismiss) {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 9, weight: .bold))
+                        .foregroundStyle(QuivPalette.muted.opacity(0.78))
+                        .frame(width: 24, height: 24)
+                        .background(QuivPalette.control, in: Circle())
+                }
+                .buttonStyle(.plain)
+                .help("Close Shortcuts")
+                .accessibilityLabel("Close Shortcuts")
+            }
         }
         .padding(.horizontal, 22)
         .padding(.top, 18)
@@ -120,26 +134,33 @@ struct ShortcutsOverlay: View {
     }
 
     private var columns: some View {
-        HStack(alignment: .top, spacing: 28) {
-            ForEach(Array(sections.enumerated()), id: \.offset) { _, section in
-                VStack(alignment: .leading, spacing: 10) {
-                    Text(section.title.uppercased())
-                        .font(.system(size: 9.5, weight: .bold, design: .monospaced))
-                        .tracking(1.5)
-                        .foregroundStyle(QuivPalette.accent.opacity(0.55))
+        ScrollView {
+            LazyVGrid(
+                columns: [GridItem(.adaptive(minimum: 220), spacing: 24, alignment: .top)],
+                alignment: .leading,
+                spacing: 18
+            ) {
+                ForEach(Array(sections.enumerated()), id: \.offset) { _, section in
+                    VStack(alignment: .leading, spacing: 10) {
+                        Text(section.title.uppercased())
+                            .font(.system(size: 9.5, weight: .bold, design: .monospaced))
+                            .tracking(1.5)
+                            .foregroundStyle(QuivPalette.accent.opacity(0.55))
 
-                    VStack(alignment: .leading, spacing: 6) {
-                        ForEach(Array(section.rows.enumerated()), id: \.offset) { _, row in
-                            ShortcutRow(keys: row.keys, label: row.label)
+                        VStack(alignment: .leading, spacing: 6) {
+                            ForEach(Array(section.rows.enumerated()), id: \.offset) { _, row in
+                                ShortcutRow(keys: row.keys, label: row.label)
+                            }
                         }
                     }
+                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
             }
+            .padding(.horizontal, 22)
+            .padding(.top, 16)
+            .padding(.bottom, 20)
         }
-        .padding(.horizontal, 22)
-        .padding(.top, 16)
-        .padding(.bottom, 20)
+        .scrollIndicators(.automatic)
     }
 }
 
@@ -178,6 +199,8 @@ private struct ShortcutRow: View {
                 .foregroundStyle(QuivPalette.ink.opacity(0.7))
                 .lineLimit(1)
         }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(label), \(keys.joined())")
     }
 }
 
@@ -210,7 +233,7 @@ private struct KeyCap: View {
 #Preview {
     ZStack {
         QuivPalette.base
-        ShortcutsOverlay(pinned: false)
+        ShortcutsOverlay(pinned: false, onDismiss: {})
     }
     .frame(width: 720, height: 520)
 }
