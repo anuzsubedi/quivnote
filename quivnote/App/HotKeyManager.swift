@@ -14,21 +14,47 @@ final class HotKeyManager {
 
     init(onHotKey: @escaping () -> Void) {
         self.onHotKey = onHotKey
-        install()
+        installHandler()
+        register()
     }
 
     func tearDown() {
-        if let hotKeyRef {
-            UnregisterEventHotKey(hotKeyRef)
-            self.hotKeyRef = nil
-        }
+        unregister()
         if let handlerRef {
             RemoveEventHandler(handlerRef)
             self.handlerRef = nil
         }
     }
 
-    private func install() {
+    /// (Re)registers the global hotkey from GeneralSettings.
+    func register() {
+        unregister()
+
+        let settings = GeneralSettings.shared
+        guard settings.hotKeyEnabled else { return }
+
+        var hotKeyRef: EventHotKeyRef?
+        let hotKeyID = EventHotKeyID(signature: OSType(0x51564E54), id: 1) // 'QVNT'
+        let status = RegisterEventHotKey(
+            settings.hotKeyCode,
+            settings.hotKeyModifiers,
+            hotKeyID,
+            GetApplicationEventTarget(),
+            0,
+            &hotKeyRef
+        )
+        guard status == noErr else { return }
+        self.hotKeyRef = hotKeyRef
+    }
+
+    private func unregister() {
+        if let hotKeyRef {
+            UnregisterEventHotKey(hotKeyRef)
+            self.hotKeyRef = nil
+        }
+    }
+
+    private func installHandler() {
         var eventType = EventTypeSpec(
             eventClass: OSType(kEventClassKeyboard),
             eventKind: UInt32(kEventHotKeyPressed)
@@ -64,16 +90,5 @@ final class HotKeyManager {
         )
 
         guard status == noErr else { return }
-
-        let hotKeyID = EventHotKeyID(signature: OSType(0x51564E54), id: 1) // 'QVNT'
-        // ⌘⌥⇧N
-        RegisterEventHotKey(
-            UInt32(kVK_ANSI_N),
-            UInt32(cmdKey | optionKey | shiftKey),
-            hotKeyID,
-            GetApplicationEventTarget(),
-            0,
-            &hotKeyRef
-        )
     }
 }

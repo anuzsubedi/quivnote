@@ -177,8 +177,11 @@ final class ShortcutMonitor {
             }
         }
 
-        // ⌘⌥⇧N is owned by HotKeyManager (global)
-        if opt && shift && key == "n" {
+        // The global hotkey is owned by HotKeyManager — let it through
+        let hotKey = GeneralSettings.shared
+        if hotKey.hotKeyEnabled,
+           event.keyCode == UInt16(hotKey.hotKeyCode),
+           flags == hotKey.nsModifierFlags {
             return event
         }
 

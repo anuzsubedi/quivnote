@@ -27,6 +27,8 @@ final class NotePanelController {
     private let workspace: Workspace
     private let focus = PanelFocus()
     private var appearanceObserver: NSObjectProtocol?
+    private var outsideClickLocalMonitor: Any?
+    private var outsideClickGlobalMonitor: Any?
 
     init(workspace: Workspace) {
         self.workspace = workspace
@@ -93,6 +95,21 @@ final class NotePanelController {
         panel?.orderOut(nil)
     }
 
+    func tearDown() {
+        if let outsideClickLocalMonitor {
+            NSEvent.removeMonitor(outsideClickLocalMonitor)
+            self.outsideClickLocalMonitor = nil
+        }
+        if let outsideClickGlobalMonitor {
+            NSEvent.removeMonitor(outsideClickGlobalMonitor)
+            self.outsideClickGlobalMonitor = nil
+        }
+        if let appearanceObserver {
+            NotificationCenter.default.removeObserver(appearanceObserver)
+            self.appearanceObserver = nil
+        }
+    }
+
     func syncAppearance() {
         panel?.appearance = AppearanceSettings.shared.mode.nsAppearance
     }
@@ -140,7 +157,34 @@ final class NotePanelController {
         hosting.wantsLayer = true
         hosting.layer?.backgroundColor = NSColor.clear.cgColor
         panel.contentView = hosting
+        installOutsideClickMonitors(for: panel)
 
         return panel
+    }
+
+    private func installOutsideClickMonitors(for panel: NSPanel) {
+        let mouseEvents: NSEvent.EventTypeMask = [.leftMouseDown, .rightMouseDown, .otherMouseDown]
+
+        outsideClickLocalMonitor = NSEvent.addLocalMonitorForEvents(matching: mouseEvents) { [weak self, weak panel] event in
+            guard let self,
+                  let panel,
+                  panel.isVisible,
+                  GeneralSettings.shared.hideWhenClickingOutside,
+                  event.window !== panel
+            else { return event }
+
+            self.hide()
+            return event
+        }
+
+        outsideClickGlobalMonitor = NSEvent.addGlobalMonitorForEvents(matching: mouseEvents) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                guard let self,
+                      self.isVisible,
+                      GeneralSettings.shared.hideWhenClickingOutside
+                else { return }
+                self.hide()
+            }
+        }
     }
 }

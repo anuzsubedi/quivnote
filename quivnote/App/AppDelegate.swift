@@ -45,6 +45,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         hotKeyManager = HotKeyManager {
             panel.toggle()
         }
+
+        NotificationCenter.default.addObserver(
+            forName: .quivHotKeyChanged,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated {
+                self?.hotKeyManager?.register()
+            }
+        }
     }
 
     func applicationWillTerminate(_ notification: Notification) {
@@ -52,6 +62,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         shortcutMonitor?.stop()
         hotKeyManager?.tearDown()
         statusItemController?.tearDown()
+        panelController?.tearDown()
     }
 
     func showNote() {
