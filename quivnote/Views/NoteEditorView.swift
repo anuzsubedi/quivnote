@@ -699,7 +699,7 @@ struct NoteEditorView: View {
                             get: { tab.text },
                             set: {
                                 tab.text = $0
-                                workspace.persist()
+                                workspace.persistDebounced()
                             }
                         ),
                         showLineNumbers: tab.showLineNumbers,

@@ -78,6 +78,7 @@ final class Workspace {
     }
 
     private let stateURL: URL
+    private var debouncedPersistTask: Task<Void, Never>?
 
     init() {
         try? FileManager.default.createDirectory(at: AppPaths.root, withIntermediateDirectories: true)
@@ -690,7 +691,18 @@ final class Workspace {
 
     // MARK: - Persistence
 
+    func persistDebounced() {
+        debouncedPersistTask?.cancel()
+        debouncedPersistTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .milliseconds(500))
+            guard !Task.isCancelled else { return }
+            self?.persist()
+        }
+    }
+
     func persist() {
+        debouncedPersistTask?.cancel()
+        debouncedPersistTask = nil
         let payload = PersistedWorkspace(
             selectedID: selectedID?.uuidString,
             tabs: tabs.map {
