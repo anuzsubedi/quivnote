@@ -48,6 +48,14 @@ final class Workspace {
         case delete
     }
 
+    enum ActiveOverlay: Equatable {
+        case none
+        case settings
+        case shortcuts
+        case library
+        case find
+    }
+
     let library = NoteLibrary()
 
     var selectedTab: NoteTab? {
@@ -73,6 +81,14 @@ final class Workspace {
 
     var isLibraryRenaming: Bool {
         libraryRenamingID != nil
+    }
+
+    var activeOverlay: ActiveOverlay {
+        if settingsVisible { return .settings }
+        if shortcutsVisible { return .shortcuts }
+        if libraryVisible { return .library }
+        if findVisible { return .find }
+        return .none
     }
 
     private let stateURL: URL
@@ -232,7 +248,7 @@ final class Workspace {
     }
 
     func showFind(replace: Bool) {
-        libraryVisible = false
+        dismissAllOverlays()
         findVisible = true
         replaceVisible = replace
     }
@@ -253,7 +269,7 @@ final class Workspace {
             shortcutsPinned = false
             shortcutsVisible = false
         } else {
-            libraryVisible = false
+            dismissAllOverlays()
             shortcutsPinned = true
             shortcutsVisible = true
         }
@@ -262,10 +278,7 @@ final class Workspace {
     // MARK: - Library (⌘S / ⌘O)
 
     func showLibrary() {
-        shortcutsVisible = false
-        shortcutsPinned = false
-        settingsVisible = false
-        findVisible = false
+        dismissAllOverlays()
         library.reload()
         storageError = library.lastError
         libraryQuery = ""
@@ -278,11 +291,17 @@ final class Workspace {
     // MARK: - Settings (⌘,)
 
     func showSettings() {
+        dismissAllOverlays()
+        settingsVisible = true
+    }
+
+    private func dismissAllOverlays() {
+        findVisible = false
+        replaceVisible = false
         shortcutsVisible = false
         shortcutsPinned = false
         libraryVisible = false
-        findVisible = false
-        settingsVisible = true
+        settingsVisible = false
     }
 
     func hideSettings() {
@@ -636,8 +655,7 @@ final class Workspace {
         selectedID = nil
         pendingCloseTabID = nil
         pendingCloseFocus = .save
-        findVisible = false
-        replaceVisible = false
+        dismissAllOverlays()
         try? FileManager.default.removeItem(at: stateURL)
         _ = newTab()
     }
