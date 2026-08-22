@@ -243,11 +243,6 @@ final class Workspace {
         findStatus = ""
     }
 
-    func showShortcutsOverlay() {
-        libraryVisible = false
-        shortcutsVisible = true
-    }
-
     func hideShortcutsOverlay(force: Bool = false) {
         guard force || !shortcutsPinned else { return }
         shortcutsVisible = false

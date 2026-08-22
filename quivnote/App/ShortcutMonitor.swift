@@ -11,9 +11,6 @@ import Carbon.HIToolbox
 @MainActor
 final class ShortcutMonitor {
     private var keyDownMonitor: Any?
-    private var flagsMonitor: Any?
-    private var cmdHoldTask: Task<Void, Never>?
-    private var commandHeldAlone = false
 
     private let workspace: Workspace
     private let panel: NotePanelController
@@ -30,65 +27,16 @@ final class ShortcutMonitor {
             guard let self else { return event }
             return self.handleKeyDown(event)
         }
-
-        flagsMonitor = NSEvent.addLocalMonitorForEvents(matching: .flagsChanged) { [weak self] event in
-            guard let self else { return event }
-            self.handleFlagsChanged(event)
-            return event
-        }
     }
 
     func stop() {
-        cmdHoldTask?.cancel()
-        cmdHoldTask = nil
         if let keyDownMonitor {
             NSEvent.removeMonitor(keyDownMonitor)
             self.keyDownMonitor = nil
         }
-        if let flagsMonitor {
-            NSEvent.removeMonitor(flagsMonitor)
-            self.flagsMonitor = nil
-        }
-    }
-
-    private func handleFlagsChanged(_ event: NSEvent) {
-        guard panel.isVisible else { return }
-
-        let flags = event.modifierFlags.intersection([.command, .shift, .option, .control])
-        let cmdDown = flags.contains(.command)
-        let onlyCommand = cmdDown && flags == .command
-
-        if onlyCommand {
-            guard !commandHeldAlone else { return }
-            commandHeldAlone = true
-            cmdHoldTask?.cancel()
-            cmdHoldTask = Task { @MainActor in
-                try? await Task.sleep(for: .milliseconds(380))
-                guard !Task.isCancelled, self.commandHeldAlone, self.panel.isVisible else { return }
-                self.workspace.showShortcutsOverlay()
-            }
-        } else {
-            let wasHolding = commandHeldAlone
-            commandHeldAlone = false
-            cmdHoldTask?.cancel()
-            cmdHoldTask = nil
-            if wasHolding || (!cmdDown && !workspace.shortcutsPinned) {
-                workspace.hideShortcutsOverlay()
-            }
-        }
     }
 
     private func handleKeyDown(_ event: NSEvent) -> NSEvent? {
-        // Any key while holding ⌘ cancels the hold-to-reveal gesture
-        if commandHeldAlone {
-            commandHeldAlone = false
-            cmdHoldTask?.cancel()
-            cmdHoldTask = nil
-            if !workspace.shortcutsPinned {
-                workspace.hideShortcutsOverlay()
-            }
-        }
-
         // Escape — dismiss overlay / library / find / panel
         if event.keyCode == UInt16(kVK_Escape) {
             guard panel.isVisible else { return event }

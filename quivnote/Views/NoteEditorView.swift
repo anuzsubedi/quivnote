@@ -39,13 +39,20 @@ struct NoteEditorView: View {
                 }
             }
 
+            if !workspace.libraryVisible,
+               !workspace.shortcutsVisible,
+               !workspace.settingsVisible,
+               workspace.pendingCloseTabID == nil {
+                commandsLauncher
+            }
+
             if workspace.libraryVisible {
                 LibraryBrowser(workspace: workspace)
                     .transition(.opacity.combined(with: .scale(scale: 0.97)))
             }
 
             if workspace.shortcutsVisible {
-                ShortcutsOverlay(pinned: workspace.shortcutsPinned) {
+                ShortcutsOverlay {
                     workspace.shortcutsPinned = false
                     workspace.hideShortcutsOverlay(force: true)
                 }
@@ -113,6 +120,48 @@ struct NoteEditorView: View {
         Rectangle()
             .fill(QuivPalette.border)
             .frame(height: 0.5)
+    }
+
+    private var commandsLauncher: some View {
+        Button {
+            workspace.toggleShortcutsPinned()
+        } label: {
+            HStack(spacing: 7) {
+                HStack(spacing: 3) {
+                    commandsKeyCap("⌘")
+                    commandsKeyCap("/")
+                }
+
+                Text("Commands")
+                    .font(.system(size: 10.5, weight: .medium))
+                    .foregroundStyle(QuivPalette.muted.opacity(0.68))
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 6)
+            .background {
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    .fill(hoveredToolbarItem == "commands" ? QuivPalette.control : .clear)
+            }
+        }
+        .buttonStyle(.plain)
+        .help("Show Commands (⌘/)")
+        .accessibilityLabel("Show Commands")
+        .accessibilityHint("Keyboard shortcut Command slash")
+        .onHover { hoveredToolbarItem = $0 ? "commands" : nil }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
+        .padding(10)
+    }
+
+    private func commandsKeyCap(_ label: String) -> some View {
+        Text(label)
+            .font(.system(size: 9.5, weight: .semibold, design: .monospaced))
+            .foregroundStyle(QuivPalette.muted.opacity(0.72))
+            .frame(minWidth: 17, minHeight: 17)
+            .background(QuivPalette.ink.opacity(0.045), in: RoundedRectangle(cornerRadius: 4))
+            .overlay {
+                RoundedRectangle(cornerRadius: 4)
+                    .strokeBorder(QuivPalette.ink.opacity(0.07), lineWidth: 0.5)
+            }
     }
 
     // MARK: - Chrome Header
@@ -672,8 +721,8 @@ struct NoteEditorView: View {
                                 .font(.system(size: 15.5))
                                 .foregroundStyle(QuivPalette.muted.opacity(0.52))
                             Text(tab.editorMode == .wysiwyg
-                                 ? "Formatting appears as you complete Markdown  ·  Hold ⌘ for shortcuts"
-                                 : "Markdown source  ·  Hold ⌘ for shortcuts")
+                                 ? "Formatting appears as you complete Markdown  ·  ⌘/ for commands"
+                                 : "Markdown source  ·  ⌘/ for commands")
                                 .font(.system(size: 10.5, weight: .medium))
                                 .foregroundStyle(QuivPalette.muted.opacity(0.46))
                         }
