@@ -77,6 +77,7 @@ final class Workspace {
 
     private let stateURL: URL
     private var debouncedPersistTask: Task<Void, Never>?
+    private var saveFlashTask: Task<Void, Never>?
 
     init() {
         try? FileManager.default.createDirectory(at: AppPaths.root, withIntermediateDirectories: true)
@@ -778,9 +779,11 @@ final class Workspace {
     }
 
     private func flashSaved() {
+        saveFlashTask?.cancel()
         saveFlash = true
-        Task { @MainActor in
+        saveFlashTask = Task { @MainActor in
             try? await Task.sleep(for: .milliseconds(1200))
+            guard !Task.isCancelled else { return }
             saveFlash = false
         }
     }
