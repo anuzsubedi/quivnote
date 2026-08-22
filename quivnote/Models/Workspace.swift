@@ -28,6 +28,9 @@ final class Workspace {
     var libraryRenamingID: UUID?
     var libraryRenameDraft = ""
     var saveFlash = false
+    /// Non-nil when the most recent library or workspace write failed; drives
+    /// the error banner in the editor status bar until the next successful op.
+    var storageError: String?
     /// Inline “unsaved changes” prompt for a tab about to close.
     var pendingCloseTabID: UUID?
     var pendingCloseFocus: PendingCloseAction = .save
@@ -77,11 +80,14 @@ final class Workspace {
     @discardableResult
     func newTab(text: String = "", libraryID: UUID? = nil, title: String? = nil) -> NoteTab {
         let resolvedTitle = title ?? NoteLibrary.title(from: text)
+        let settings = GeneralSettings.shared
         let tab = NoteTab(
             libraryID: libraryID,
             title: resolvedTitle,
             text: text,
-            isDirty: libraryID == nil && !text.isEmpty
+            isDirty: libraryID == nil && !text.isEmpty,
+            editorMode: settings.defaultEditorMode,
+            showLineNumbers: settings.defaultLineNumbers
         )
         tabs.append(tab)
         selectedID = tab.id
@@ -367,10 +373,17 @@ final class Workspace {
     @discardableResult
     func saveToLibrary() -> Bool {
         guard let tab = selectedTab else { return false }
-        let saved = library.save(id: tab.libraryID, title: tab.title, body: tab.text)
+        let saved: LibraryNote
+        do {
+            saved = try library.save(id: tab.libraryID, title: tab.title, body: tab.text)
+        } catch {
+            storageError = library.lastError ?? "Couldn't save note."
+            return false
+        }
         tab.libraryID = saved.id
         tab.title = saved.title
         tab.isDirty = false
+        storageError = nil
         persist()
         flashSaved()
         return true
@@ -403,24 +416,29 @@ final class Workspace {
         persist()
     }
 
-    func deleteLibraryNote(_ note: LibraryNote) {
-        let alert = NSAlert()
-        alert.messageText = "Delete “\(note.title)”?"
-        alert.informativeText = "This removes it from your library. Open tabs keep their text until closed."
-        alert.addButton(withTitle: "Delete")
-        alert.addButton(withTitle: "Cancel")
-        guard alert.runModal() == .alertFirstButtonReturn else { return }
-
-        library.delete(id: note.id)
+    @discardableResult
+    private func deleteLibraryNote(_ note: LibraryNote) -> Bool {
+        do {
+            try library.delete(id: note.id)
+        } catch {
+            presentAlert(title: "Couldn't delete", message: library.lastError ?? "Unknown error.")
+            return false
+        }
         for tab in tabs where tab.libraryID == note.id {
             tab.libraryID = nil
             tab.isDirty = true
         }
         persist()
+        return true
     }
 
     func renameLibraryNote(_ note: LibraryNote, to title: String) {
-        library.rename(id: note.id, title: title)
+        do {
+            try library.rename(id: note.id, title: title)
+        } catch {
+            presentAlert(title: "Couldn't rename", message: library.lastError ?? "Unknown error.")
+            return
+        }
         for tab in tabs where tab.libraryID == note.id {
             tab.title = library.note(id: note.id)?.title ?? title
         }
@@ -465,13 +483,124 @@ final class Workspace {
         guard let data = try? Data(contentsOf: url),
               let text = String(data: data, encoding: .utf8) ?? String(data: data, encoding: .isoLatin1)
         else {
-            presentAlert(title: "Couldn’t import", message: url.lastPathComponent)
+            presentAlert(title: "Couldn't import", message: url.lastPathComponent)
             return
         }
 
         let title = url.deletingPathExtension().lastPathComponent
-        let saved = library.save(id: nil, title: title, body: text)
+        let saved: LibraryNote
+        do {
+            saved = try library.save(id: nil, title: title, body: text)
+        } catch {
+            presentAlert(title: "Couldn't import", message: library.lastError ?? "Unknown error.")
+            return
+        }
         openLibraryNote(saved)
+    }
+
+    // MARK: - Data management
+
+    func revealLibraryInFinder() {
+        NSWorkspace.shared.activateFileViewerSelecting([AppPaths.notes])
+    }
+
+    func exportAllNotes() {
+        guard !library.notes.isEmpty else {
+            presentAlert(title: "Nothing to export", message: "Your library is empty.")
+            return
+        }
+
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.canCreateDirectories = true
+        panel.message = "Choose a folder to export all \(library.notes.count) notes"
+        guard panel.runModal() == .OK, let folder = panel.url else { return }
+        let accessed = folder.startAccessingSecurityScopedResource()
+        defer { if accessed { folder.stopAccessingSecurityScopedResource() } }
+
+        do {
+            var usedNames = Set<String>()
+            for note in library.notes {
+                var base = note.title.replacingOccurrences(of: "/", with: "-")
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                if base.isEmpty { base = "Untitled" }
+                var name = base
+                var counter = 2
+                while usedNames.contains(name.lowercased()) {
+                    name = "\(base) \(counter)"
+                    counter += 1
+                }
+                usedNames.insert(name.lowercased())
+                try note.body.write(
+                    to: folder.appendingPathComponent("\(name).md"),
+                    atomically: true,
+                    encoding: .utf8
+                )
+            }
+            presentAlert(title: "Exported", message: "\(library.notes.count) notes written to \(folder.lastPathComponent).")
+        } catch {
+            presentAlert(title: "Couldn’t export", message: error.localizedDescription)
+        }
+    }
+
+    func importFolderOfNotes() {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.message = "Import every markdown file in a folder"
+        guard panel.runModal() == .OK, let folder = panel.url else { return }
+        let accessed = folder.startAccessingSecurityScopedResource()
+        defer { if accessed { folder.stopAccessingSecurityScopedResource() } }
+
+        let urls = ((try? FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil)) ?? [])
+            .filter {
+                ["md", "markdown", "txt"].contains($0.pathExtension.lowercased())
+            }
+        guard !urls.isEmpty else {
+            presentAlert(title: "Nothing to import", message: "No markdown files found in that folder.")
+            return
+        }
+
+        var imported = 0
+        for url in urls {
+            let innerAccessed = url.startAccessingSecurityScopedResource()
+            defer { if innerAccessed { url.stopAccessingSecurityScopedResource() } }
+            guard let data = try? Data(contentsOf: url),
+                  let text = String(data: data, encoding: .utf8) ?? String(data: data, encoding: .isoLatin1)
+            else { continue }
+            do {
+                _ = try library.save(id: nil, title: url.deletingPathExtension().lastPathComponent, body: text)
+            } catch {
+                presentAlert(title: "Couldn't import", message: library.lastError ?? "Unknown error.")
+                return
+            }
+            imported += 1
+        }
+
+        if imported > 0 {
+            presentAlert(title: "Imported", message: "\(imported) notes added to your library.")
+        } else {
+            presentAlert(title: "Couldn’t import", message: "None of the files could be read.")
+        }
+    }
+
+    func resetWorkspaceState() {
+        let alert = NSAlert()
+        alert.messageText = "Reset workspace?"
+        alert.informativeText = "Closes all tabs and clears workspace state. Notes saved in your library are kept."
+        alert.addButton(withTitle: "Reset")
+        alert.addButton(withTitle: "Cancel")
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+
+        tabs.removeAll()
+        selectedID = nil
+        pendingCloseTabID = nil
+        pendingCloseFocus = .save
+        findVisible = false
+        replaceVisible = false
+        try? FileManager.default.removeItem(at: stateURL)
+        _ = newTab()
     }
 
     // MARK: - Find / Replace
@@ -539,8 +668,12 @@ final class Workspace {
                 )
             }
         )
-        guard let data = try? JSONEncoder().encode(payload) else { return }
-        try? data.write(to: stateURL, options: .atomic)
+        do {
+            let data = try JSONEncoder().encode(payload)
+            try data.write(to: stateURL, options: .atomic)
+        } catch {
+            storageError = "Workspace state not saved: \(error.localizedDescription)"
+        }
     }
 
     private func loadState() {
@@ -558,7 +691,8 @@ final class Workspace {
                 title: NoteLibrary.normalizedTitle(item.title ?? "", body: item.text ?? ""),
                 text: item.text ?? "",
                 isDirty: item.isDirty,
-                editorMode: item.editorMode ?? (item.showPreview == true ? .preview : .wysiwyg),
+                editorMode: item.editorMode
+                    ?? (item.showPreview == true ? .preview : GeneralSettings.shared.defaultEditorMode),
                 showLineNumbers: item.showLineNumbers
             )
         }
@@ -579,7 +713,13 @@ final class Workspace {
               !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         else { return }
 
-        let saved = library.save(id: nil, title: NoteLibrary.title(from: text), body: text)
+        let saved: LibraryNote
+        do {
+            saved = try library.save(id: nil, title: NoteLibrary.title(from: text), body: text)
+        } catch {
+            // Migration failure is non-fatal; leave the legacy file in place.
+            return
+        }
         if tabs.isEmpty || (tabs.count == 1 && tabs[0].text.isEmpty) {
             tabs = [NoteTab(libraryID: saved.id, title: saved.title, text: saved.body, isDirty: false)]
             selectedID = tabs[0].id
@@ -627,4 +767,6 @@ extension Notification.Name {
     static let quivReloadText = Notification.Name("quivnote.reloadText")
     static let quivFocusEditor = Notification.Name("quivnote.focusEditor")
     static let quivAppearanceChanged = Notification.Name("quivnote.appearanceChanged")
+    static let quivGeneralSettingsChanged = Notification.Name("quivnote.generalSettingsChanged")
+    static let quivHotKeyChanged = Notification.Name("quivnote.hotKeyChanged")
 }
