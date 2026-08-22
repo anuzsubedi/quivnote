@@ -542,7 +542,7 @@ struct NoteTextView: NSViewRepresentable {
                         storage.addAttribute(.foregroundColor, value: QuivPalette.nsAccent.withAlphaComponent(0.5), range: lineRange)
                         fence = nil
                     } else {
-                        storage.addAttribute(.font, value: NSFont.monospacedSystemFont(ofSize: 14, weight: .regular), range: lineRange)
+                        storage.addAttribute(.font, value: NSFont.monospacedSystemFont(ofSize: CGFloat(GeneralSettings.shared.editorFontSize) - 1, weight: .regular), range: lineRange)
                         storage.addAttribute(.backgroundColor, value: QuivPalette.nsAccent.withAlphaComponent(0.06), range: lineRange)
                     }
                 } else if line.hasPrefix("```") {
