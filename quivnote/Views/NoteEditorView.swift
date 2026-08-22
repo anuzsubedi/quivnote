@@ -98,6 +98,7 @@ struct NoteEditorView: View {
                     workspace.setEditorMode(.wysiwyg)
                 }
                 focusedSearchField = .find
+                selectAllFindTextWhenFocused()
             } else {
                 focusedSearchField = nil
             }
@@ -187,7 +188,10 @@ struct NoteEditorView: View {
     // MARK: - Chrome Header
 
     private var chromeHeader: some View {
-        HStack(spacing: 8) {
+        let isDirty = workspace.selectedTab?.isDirty ?? false
+        let saveFlash = workspace.saveFlash
+
+        return HStack(spacing: 8) {
             // App wordmark
             HStack(spacing: 5) {
                 ZStack {
@@ -206,9 +210,18 @@ struct NoteEditorView: View {
 
             Spacer()
 
-            if let tab = workspace.selectedTab, tab.isDirty || workspace.saveFlash {
-                statusBadge(tab)
+            ZStack(alignment: .trailing) {
+                Color.clear
+                    .frame(width: 64, height: 22)
+                    .accessibilityHidden(true)
+
+                if let tab = workspace.selectedTab, isDirty || saveFlash {
+                    statusBadge(tab)
+                        .transition(.opacity)
+                }
             }
+            .animation(reduceMotion ? nil : .easeOut(duration: 0.18), value: isDirty)
+            .animation(reduceMotion ? nil : .easeOut(duration: 0.18), value: saveFlash)
 
             if let storageError = workspace.storageError {
                 storageErrorBadge(storageError)
@@ -382,6 +395,30 @@ struct NoteEditorView: View {
             }
             .padding(.horizontal, 10)
             .padding(.vertical, 6)
+        }
+        .mask {
+            HStack(spacing: 0) {
+                LinearGradient(
+                    colors: [QuivPalette.ink.opacity(0), QuivPalette.ink],
+                    startPoint: .leading,
+                    endPoint: .trailing
+                )
+                .frame(width: 16)
+                .frame(maxHeight: .infinity)
+
+                Rectangle()
+                    .fill(QuivPalette.ink)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+                LinearGradient(
+                    colors: [QuivPalette.ink, QuivPalette.ink.opacity(0)],
+                    startPoint: .leading,
+                    endPoint: .trailing
+                )
+                .frame(width: 16)
+                .frame(maxHeight: .infinity)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .background(QuivPalette.chrome.opacity(0.32))
     }
