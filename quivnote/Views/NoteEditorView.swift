@@ -424,6 +424,11 @@ struct NoteEditorView: View {
                 .padding(.trailing, 3)
             }
         }
+        .background {
+            TabMiddleClickHandler {
+                workspace.closeTab(id: tab.id)
+            }
+        }
         .background(
             RoundedRectangle(cornerRadius: 7, style: .continuous)
                 .fill(
@@ -442,7 +447,8 @@ struct NoteEditorView: View {
         .onHover { isHovered in
             hoveredTabID = isHovered ? tab.id : nil
         }
-        .help(tab.displayTitle)
+        .help("\(tab.displayTitle) (middle-click to close)")
+        .accessibilityHint("Middle-click to close this tab")
         .accessibilityElement(children: .contain)
     }
 
@@ -781,6 +787,73 @@ struct NoteEditorView: View {
             with: "",
             options: .regularExpression
         )
+    }
+}
+
+private struct TabMiddleClickHandler: NSViewRepresentable {
+    let action: () -> Void
+
+    func makeNSView(context: Context) -> MonitorView {
+        let view = MonitorView()
+        view.action = action
+        return view
+    }
+
+    func updateNSView(_ view: MonitorView, context: Context) {
+        view.action = action
+    }
+
+    final class MonitorView: NSView {
+        var action: (() -> Void)?
+        private var eventMonitor: Any?
+
+        override func hitTest(_ point: NSPoint) -> NSView? {
+            nil
+        }
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            if window == nil {
+                removeEventMonitor()
+            } else {
+                installEventMonitor()
+            }
+        }
+
+        override func viewWillMove(toWindow newWindow: NSWindow?) {
+            if newWindow == nil {
+                removeEventMonitor()
+            }
+            super.viewWillMove(toWindow: newWindow)
+        }
+
+        deinit {
+            removeEventMonitor()
+        }
+
+        private func installEventMonitor() {
+            guard eventMonitor == nil else { return }
+            eventMonitor = NSEvent.addLocalMonitorForEvents(matching: .otherMouseDown) { [weak self] event in
+                guard let self,
+                      let window = self.window,
+                      event.window === window,
+                      event.buttonNumber == 2
+                else { return event }
+
+                let location = self.convert(event.locationInWindow, from: nil)
+                guard self.bounds.contains(location) else { return event }
+
+                self.action?()
+                return nil
+            }
+        }
+
+        private func removeEventMonitor() {
+            if let eventMonitor {
+                NSEvent.removeMonitor(eventMonitor)
+                self.eventMonitor = nil
+            }
+        }
     }
 }
 
