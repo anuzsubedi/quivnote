@@ -682,6 +682,7 @@ final class Workspace {
         }
         tab.text = tab.text.replacingOccurrences(of: findQuery, with: replaceQuery)
         findStatus = "Replaced \(count)"
+        persistDebounced()
         NotificationCenter.default.post(name: .quivReloadText, object: tab.id.uuidString)
     }
 
