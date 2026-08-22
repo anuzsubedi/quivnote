@@ -48,6 +48,14 @@ final class Workspace {
         case delete
     }
 
+    enum ActiveOverlay: Equatable {
+        case none
+        case settings
+        case shortcuts
+        case library
+        case find
+    }
+
     let library = NoteLibrary()
 
     var selectedTab: NoteTab? {
@@ -58,9 +66,7 @@ final class Workspace {
     var filteredLibraryNotes: [LibraryNote] {
         let q = libraryQuery.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         guard !q.isEmpty else { return library.notes }
-        return library.notes.filter {
-            $0.title.lowercased().contains(q) || $0.body.lowercased().contains(q)
-        }
+        return library.notes.filter { $0.searchText.contains(q) }
     }
 
     var focusedLibraryNote: LibraryNote? {
@@ -77,7 +83,17 @@ final class Workspace {
         libraryRenamingID != nil
     }
 
+    var activeOverlay: ActiveOverlay {
+        if settingsVisible { return .settings }
+        if shortcutsVisible { return .shortcuts }
+        if libraryVisible { return .library }
+        if findVisible { return .find }
+        return .none
+    }
+
     private let stateURL: URL
+    private var debouncedPersistTask: Task<Void, Never>?
+    private var saveFlashTask: Task<Void, Never>?
 
     init() {
         try? FileManager.default.createDirectory(at: AppPaths.root, withIntermediateDirectories: true)
@@ -232,7 +248,7 @@ final class Workspace {
     }
 
     func showFind(replace: Bool) {
-        libraryVisible = false
+        dismissAllOverlays()
         findVisible = true
         replaceVisible = replace
     }
@@ -253,7 +269,7 @@ final class Workspace {
             shortcutsPinned = false
             shortcutsVisible = false
         } else {
-            libraryVisible = false
+            dismissAllOverlays()
             shortcutsPinned = true
             shortcutsVisible = true
         }
@@ -262,11 +278,9 @@ final class Workspace {
     // MARK: - Library (⌘S / ⌘O)
 
     func showLibrary() {
-        shortcutsVisible = false
-        shortcutsPinned = false
-        settingsVisible = false
-        findVisible = false
+        dismissAllOverlays()
         library.reload()
+        storageError = library.lastError
         libraryQuery = ""
         libraryRenamingID = nil
         pendingLibraryDeleteID = nil
@@ -277,11 +291,17 @@ final class Workspace {
     // MARK: - Settings (⌘,)
 
     func showSettings() {
+        dismissAllOverlays()
+        settingsVisible = true
+    }
+
+    private func dismissAllOverlays() {
+        findVisible = false
+        replaceVisible = false
         shortcutsVisible = false
         shortcutsPinned = false
         libraryVisible = false
-        findVisible = false
-        settingsVisible = true
+        settingsVisible = false
     }
 
     func hideSettings() {
@@ -635,8 +655,7 @@ final class Workspace {
         selectedID = nil
         pendingCloseTabID = nil
         pendingCloseFocus = .save
-        findVisible = false
-        replaceVisible = false
+        dismissAllOverlays()
         try? FileManager.default.removeItem(at: stateURL)
         _ = newTab()
     }
@@ -681,6 +700,7 @@ final class Workspace {
         }
         tab.text = tab.text.replacingOccurrences(of: findQuery, with: replaceQuery)
         findStatus = "Replaced \(count)"
+        persistDebounced()
         NotificationCenter.default.post(name: .quivReloadText, object: tab.id.uuidString)
     }
 
@@ -690,7 +710,18 @@ final class Workspace {
 
     // MARK: - Persistence
 
+    func persistDebounced() {
+        debouncedPersistTask?.cancel()
+        debouncedPersistTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .milliseconds(500))
+            guard !Task.isCancelled else { return }
+            self?.persist()
+        }
+    }
+
     func persist() {
+        debouncedPersistTask?.cancel()
+        debouncedPersistTask = nil
         let payload = PersistedWorkspace(
             selectedID: selectedID?.uuidString,
             tabs: tabs.map {
@@ -709,15 +740,38 @@ final class Workspace {
         do {
             let data = try JSONEncoder().encode(payload)
             try data.write(to: stateURL, options: .atomic)
+            storageError = nil
         } catch {
             storageError = "Workspace state not saved: \(error.localizedDescription)"
         }
     }
 
     private func loadState() {
-        guard let data = try? Data(contentsOf: stateURL),
-              let payload = try? JSONDecoder().decode(PersistedWorkspace.self, from: data)
-        else { return }
+        let data: Data
+        do {
+            data = try Data(contentsOf: stateURL)
+        } catch CocoaError.fileNoSuchFile {
+            // A missing workspace is normal on first launch.
+            return
+        } catch {
+            storageError = "Workspace state couldn't be read: \(error.localizedDescription)"
+            return
+        }
+
+        let payload: PersistedWorkspace
+        do {
+            payload = try JSONDecoder().decode(PersistedWorkspace.self, from: data)
+        } catch {
+            let backupMessage: String
+            do {
+                let backup = try backupCorruptFile(at: stateURL)
+                backupMessage = " A copy was saved as \(backup.lastPathComponent)."
+            } catch let backupError {
+                backupMessage = " The corrupt workspace could not be backed up: \(backupError.localizedDescription)."
+            }
+            storageError = "Workspace state couldn't be decoded: \(error.localizedDescription).\(backupMessage)"
+            return
+        }
 
         // Skip legacy schema that used filePath / untitledCounter without libraryID field shape
         if payload.tabs.isEmpty { return }
@@ -740,6 +794,24 @@ final class Workspace {
         } else {
             selectedID = tabs.first?.id
         }
+    }
+
+    private func backupCorruptFile(at url: URL) throws -> URL {
+        let fileManager = FileManager.default
+        let directory = url.deletingLastPathComponent()
+        let timestamp = Int(Date().timeIntervalSince1970)
+        var destination = directory.appendingPathComponent(
+            "\(url.lastPathComponent).corrupt-\(timestamp)"
+        )
+        var suffix = 1
+        while fileManager.fileExists(atPath: destination.path) {
+            destination = directory.appendingPathComponent(
+                "\(url.lastPathComponent).corrupt-\(timestamp)-\(suffix)"
+            )
+            suffix += 1
+        }
+        try fileManager.copyItem(at: url, to: destination)
+        return destination
     }
 
     private func migrateLegacyIfNeeded() {
@@ -767,9 +839,11 @@ final class Workspace {
     }
 
     private func flashSaved() {
+        saveFlashTask?.cancel()
         saveFlash = true
-        Task { @MainActor in
+        saveFlashTask = Task { @MainActor in
             try? await Task.sleep(for: .milliseconds(1200))
+            guard !Task.isCancelled else { return }
             saveFlash = false
         }
     }

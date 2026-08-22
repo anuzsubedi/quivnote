@@ -241,6 +241,7 @@ struct SettingsOverlay: View {
                         for tab in workspace.tabs {
                             tab.showLineNumbers = newValue
                         }
+                        workspace.persist()
                     }
                 }
 
@@ -298,8 +299,7 @@ struct SettingsOverlay: View {
                             keyCode: editorSettings.hotKeyCode,
                             modifiers: editorSettings.hotKeyModifiers,
                             onChange: { code, modifiers in
-                                editorSettings.hotKeyCode = code
-                                editorSettings.hotKeyModifiers = modifiers
+                                HotKeyManager.updateHotKey(keyCode: code, modifiers: modifiers)
                             }
                         )
                         .frame(width: 190)
@@ -588,6 +588,7 @@ struct HotKeyRecorder: View {
     }
 }
 
+#if DEBUG
 #Preview {
     ZStack {
         QuivPalette.base
@@ -595,3 +596,4 @@ struct HotKeyRecorder: View {
     }
     .frame(width: 680, height: 520)
 }
+#endif

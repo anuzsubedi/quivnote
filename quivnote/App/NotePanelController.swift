@@ -29,6 +29,8 @@ final class NotePanelController {
     private var appearanceObserver: NSObjectProtocol?
     private var outsideClickLocalMonitor: Any?
     private var outsideClickGlobalMonitor: Any?
+    private var pendingShowWorkItem: DispatchWorkItem?
+    private var visibilityGeneration = 0
 
     init(workspace: Workspace) {
         self.workspace = workspace
@@ -62,6 +64,10 @@ final class NotePanelController {
     }
 
     func show() {
+        pendingShowWorkItem?.cancel()
+        visibilityGeneration += 1
+        let generation = visibilityGeneration
+
         let panel = panel ?? makePanel()
         self.panel = panel
 
@@ -79,23 +85,36 @@ final class NotePanelController {
         panel.makeKeyAndOrderFront(nil)
         focus.request()
 
-        for delay in [0.0, 0.05, 0.12] {
-            DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak panel] in
-                guard let panel else { return }
-                NSApp.activate(ignoringOtherApps: true)
-                panel.makeKeyAndOrderFront(nil)
-                self.focus.request()
-                NotificationCenter.default.post(name: .quivFocusEditor, object: nil)
-            }
+        let workItem = DispatchWorkItem { [weak self, weak panel] in
+            guard let self,
+                  let panel,
+                  self.panel === panel,
+                  self.visibilityGeneration == generation,
+                  panel.isVisible
+            else { return }
+
+            self.pendingShowWorkItem = nil
+            NSApp.activate(ignoringOtherApps: true)
+            panel.makeKeyAndOrderFront(nil)
+            self.focus.request()
+            NotificationCenter.default.post(name: .quivFocusEditor, object: nil)
         }
+        pendingShowWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.12, execute: workItem)
     }
 
     func hide() {
+        pendingShowWorkItem?.cancel()
+        pendingShowWorkItem = nil
+        visibilityGeneration += 1
         workspace.persist()
         panel?.orderOut(nil)
     }
 
     func tearDown() {
+        pendingShowWorkItem?.cancel()
+        pendingShowWorkItem = nil
+        visibilityGeneration += 1
         if let outsideClickLocalMonitor {
             NSEvent.removeMonitor(outsideClickLocalMonitor)
             self.outsideClickLocalMonitor = nil

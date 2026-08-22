@@ -10,6 +10,7 @@ struct LibraryBrowser: View {
 
     @State private var hoveredNoteID: UUID?
     @FocusState private var renamingNoteID: UUID?
+    @FocusState private var searchFieldFocused: Bool
 
     private let dateFormat: DateFormatter = {
         let f = DateFormatter()
@@ -117,22 +118,28 @@ struct LibraryBrowser: View {
             Image(systemName: "magnifyingglass")
                 .font(.system(size: 11.5, weight: .medium))
                 .foregroundStyle(QuivPalette.muted.opacity(0.58))
-            Text(workspace.libraryQuery.isEmpty ? "Type to search…" : workspace.libraryQuery)
+            TextField("Type to search…", text: $workspace.libraryQuery)
+                .textFieldStyle(.plain)
                 .font(.system(size: 12.5))
-                .foregroundStyle(workspace.libraryQuery.isEmpty ? QuivPalette.muted.opacity(0.62) : QuivPalette.ink)
-                .frame(maxWidth: .infinity, alignment: .leading)
+                .foregroundStyle(QuivPalette.ink)
+                .focused($searchFieldFocused)
+                .accessibilityLabel("Search notes")
             if !workspace.libraryQuery.isEmpty {
-                Text("⌫")
-                    .font(.system(size: 9, weight: .semibold, design: .monospaced))
-                    .foregroundStyle(QuivPalette.muted.opacity(0.68))
-                    .padding(.horizontal, 4)
-                    .padding(.vertical, 2)
-                    .background(QuivPalette.ink.opacity(0.055), in: RoundedRectangle(cornerRadius: 3.5))
-                    .overlay {
-                        RoundedRectangle(cornerRadius: 3.5)
-                            .strokeBorder(QuivPalette.ink.opacity(0.07), lineWidth: 0.5)
-                    }
+                Button {
+                    workspace.libraryQuery = ""
+                    searchFieldFocused = true
+                } label: {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundStyle(QuivPalette.muted)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Clear search")
+                .help("Clear search")
             }
+        }
+        .onAppear {
+            searchFieldFocused = true
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 8)

@@ -33,10 +33,8 @@ enum QuivPalette {
                   : NSColor(srgbRed: 0.105, green: 0.108, blue: 0.118, alpha: 1)
     }
 
-    static let nsMuted: NSColor = NSColor(name: nil) { a in
-        isDark(a) ? NSColor(srgbRed: 0.64, green: 0.625, blue: 0.59, alpha: 1)
-                  : NSColor(srgbRed: 0.39, green: 0.38, blue: 0.36, alpha: 1)
-    }
+    // Use the system's opaque semantic secondary label for readable supporting text.
+    static let nsMuted: NSColor = .secondaryLabelColor
 
     static let nsBorder: NSColor = NSColor(name: nil) { a in
         isDark(a) ? NSColor.white.withAlphaComponent(0.08)
@@ -59,7 +57,7 @@ enum QuivPalette {
     static var surface: Color { Color(nsColor: nsSurface) }
     static var raised: Color { Color(nsColor: nsRaised) }
     static var ink: Color { Color(nsColor: nsInk) }
-    static var muted: Color { Color(nsColor: nsMuted) }
+    static var muted: Color { Color(nsColor: .secondaryLabelColor) }
     static var border: Color { Color(nsColor: nsBorder) }
     static var borderSubtle: Color { Color(nsColor: nsBorderSubtle) }
 
