@@ -3,6 +3,7 @@
 //  quivnote
 //
 
+import AppKit
 import MarkdownUI
 import SwiftUI
 
@@ -17,6 +18,8 @@ struct NoteEditorView: View {
     @FocusState private var focusedSearchField: SearchField?
     @State private var hoveredTabID: UUID?
     @State private var hoveredToolbarItem: String?
+    @State private var storageErrorDetail = ""
+    @State private var showingStorageError = false
 
     var body: some View {
         let currentAccent = AppearanceSettings.shared.accentChoice
@@ -98,6 +101,16 @@ struct NoteEditorView: View {
             } else {
                 focusedSearchField = nil
             }
+        }
+        .onChange(of: workspace.storageError) { _, message in
+            guard let message else { return }
+            storageErrorDetail = message
+            announceStorageError(message)
+        }
+        .alert("Not saved", isPresented: $showingStorageError) {
+            Button("OK", role: .cancel) { }
+        } message: {
+            Text(storageErrorDetail)
         }
     }
 
@@ -311,20 +324,37 @@ struct NoteEditorView: View {
     }
 
     private func storageErrorBadge(_ message: String) -> some View {
-        HStack(spacing: 4) {
-            Image(systemName: "exclamationmark.triangle.fill")
-                .font(.system(size: 9, weight: .semibold))
-            Text("Not saved")
-                .font(.system(size: 10, weight: .semibold, design: .monospaced))
+        Button {
+            storageErrorDetail = message
+            showingStorageError = true
+        } label: {
+            HStack(spacing: 4) {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .font(.system(size: 9, weight: .semibold))
+                Text("Not saved")
+                    .font(.system(size: 10, weight: .semibold, design: .monospaced))
+            }
+            .foregroundStyle(.red.opacity(0.9))
+            .padding(.horizontal, 8)
+            .padding(.vertical, 3)
+            .background(QuivPalette.control, in: Capsule())
         }
-        .foregroundStyle(.red.opacity(0.9))
-        .padding(.horizontal, 8)
-        .padding(.vertical, 3)
-        .background(QuivPalette.control, in: Capsule())
-        .help(message)
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel("Storage error")
+        .buttonStyle(.plain)
+        .help("Not saved: \(message)")
+        .accessibilityLabel("Not saved")
         .accessibilityValue(message)
+        .accessibilityHint("Show the storage error details")
+    }
+
+    private func announceStorageError(_ message: String) {
+        NSAccessibility.post(
+            element: NSApplication.shared,
+            notification: .announcementRequested,
+            userInfo: [
+                .announcement: "Not saved. \(message)",
+                .priority: 90,
+            ]
+        )
     }
 
     // MARK: - Tab Bar
