@@ -12,29 +12,40 @@ import Observation
 final class NoteLibrary {
     private(set) var notes: [LibraryNote] = []
 
+    /// Set when the most recent load, save, delete, or index write failed.
+    private(set) var lastError: String?
+
     private let folder: URL
     private let indexURL: URL
 
     init() {
         folder = AppPaths.notes
         indexURL = folder.appendingPathComponent("index.json")
-        try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-        reload()
+        do {
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            reload()
+        } catch {
+            lastError = "Couldn't create notes folder: \(error.localizedDescription)"
+        }
     }
 
     func reload() {
-        guard let data = try? Data(contentsOf: indexURL),
-              let decoded = try? JSONDecoder().decode([LibraryNote].self, from: data)
-        else {
+        do {
+            let data = try Data(contentsOf: indexURL)
+            let decoded = try JSONDecoder().decode([LibraryNote].self, from: data)
+            notes = decoded.map { item in
+                var normalized = item
+                normalized.title = Self.normalizedTitle(item.title, body: item.body)
+                return normalized
+            }
+            .sorted { $0.updatedAt > $1.updatedAt }
+        } catch CocoaError.fileNoSuchFile {
+            // Missing index file on first launch is normal; start empty.
             notes = []
-            return
+        } catch {
+            notes = []
+            lastError = "Couldn't read note library: \(error.localizedDescription)"
         }
-        notes = decoded.map { item in
-            var normalized = item
-            normalized.title = Self.normalizedTitle(item.title, body: item.body)
-            return normalized
-        }
-        .sorted { $0.updatedAt > $1.updatedAt }
     }
 
     func note(id: UUID) -> LibraryNote? {
@@ -42,7 +53,7 @@ final class NoteLibrary {
     }
 
     @discardableResult
-    func save(id: UUID?, title: String, body: String) -> LibraryNote {
+    func save(id: UUID?, title: String, body: String) throws -> LibraryNote {
         let now = Date()
         let trimmedTitle = Self.normalizedTitle(title, body: body)
 
@@ -51,8 +62,14 @@ final class NoteLibrary {
             existing.body = body
             existing.updatedAt = now
             upsert(existing)
-            writeBody(existing)
-            persistIndex()
+            do {
+                try writeBody(existing)
+                try persistIndex()
+                lastError = nil
+            } catch let saveError {
+                lastError = "Couldn't save \(existing.title): \(saveError.localizedDescription)"
+                throw saveError
+            }
             return existing
         }
 
@@ -64,26 +81,46 @@ final class NoteLibrary {
             updatedAt: now
         )
         upsert(created)
-        writeBody(created)
-        persistIndex()
+        do {
+            try writeBody(created)
+            try persistIndex()
+            lastError = nil
+        } catch let saveError {
+            lastError = "Couldn't save \(created.title): \(saveError.localizedDescription)"
+            throw saveError
+        }
         return created
     }
 
-    func delete(id: UUID) {
+    func delete(id: UUID) throws {
         notes.removeAll { $0.id == id }
         let file = folder.appendingPathComponent("\(id.uuidString).md")
-        try? FileManager.default.removeItem(at: file)
-        persistIndex()
+        do {
+            if FileManager.default.fileExists(atPath: file.path) {
+                try FileManager.default.removeItem(at: file)
+            }
+            try persistIndex()
+            lastError = nil
+        } catch let deleteError {
+            lastError = "Couldn't delete note: \(deleteError.localizedDescription)"
+            throw deleteError
+        }
     }
 
-    func rename(id: UUID, title: String) {
+    func rename(id: UUID, title: String) throws {
         guard var note = note(id: id) else { return }
         note.title = title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             ? "Untitled"
             : title.trimmingCharacters(in: .whitespacesAndNewlines)
         note.updatedAt = Date()
         upsert(note)
-        persistIndex()
+        do {
+            try persistIndex()
+            lastError = nil
+        } catch let renameError {
+            lastError = "Couldn't rename \(note.title): \(renameError.localizedDescription)"
+            throw renameError
+        }
     }
 
     static func title(from body: String) -> String {
@@ -126,13 +163,13 @@ final class NoteLibrary {
         notes.sort { $0.updatedAt > $1.updatedAt }
     }
 
-    private func writeBody(_ note: LibraryNote) {
+    private func writeBody(_ note: LibraryNote) throws {
         let file = folder.appendingPathComponent("\(note.id.uuidString).md")
-        try? note.body.write(to: file, atomically: true, encoding: .utf8)
+        try note.body.write(to: file, atomically: true, encoding: .utf8)
     }
 
-    private func persistIndex() {
-        guard let data = try? JSONEncoder().encode(notes) else { return }
-        try? data.write(to: indexURL, options: .atomic)
+    private func persistIndex() throws {
+        let data = try JSONEncoder().encode(notes)
+        try data.write(to: indexURL, options: .atomic)
     }
 }

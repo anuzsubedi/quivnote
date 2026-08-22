@@ -11,9 +11,6 @@ import Carbon.HIToolbox
 @MainActor
 final class ShortcutMonitor {
     private var keyDownMonitor: Any?
-    private var flagsMonitor: Any?
-    private var cmdHoldTask: Task<Void, Never>?
-    private var commandHeldAlone = false
 
     private let workspace: Workspace
     private let panel: NotePanelController
@@ -30,65 +27,16 @@ final class ShortcutMonitor {
             guard let self else { return event }
             return self.handleKeyDown(event)
         }
-
-        flagsMonitor = NSEvent.addLocalMonitorForEvents(matching: .flagsChanged) { [weak self] event in
-            guard let self else { return event }
-            self.handleFlagsChanged(event)
-            return event
-        }
     }
 
     func stop() {
-        cmdHoldTask?.cancel()
-        cmdHoldTask = nil
         if let keyDownMonitor {
             NSEvent.removeMonitor(keyDownMonitor)
             self.keyDownMonitor = nil
         }
-        if let flagsMonitor {
-            NSEvent.removeMonitor(flagsMonitor)
-            self.flagsMonitor = nil
-        }
-    }
-
-    private func handleFlagsChanged(_ event: NSEvent) {
-        guard panel.isVisible else { return }
-
-        let flags = event.modifierFlags.intersection([.command, .shift, .option, .control])
-        let cmdDown = flags.contains(.command)
-        let onlyCommand = cmdDown && flags == .command
-
-        if onlyCommand {
-            guard !commandHeldAlone else { return }
-            commandHeldAlone = true
-            cmdHoldTask?.cancel()
-            cmdHoldTask = Task { @MainActor in
-                try? await Task.sleep(for: .milliseconds(380))
-                guard !Task.isCancelled, self.commandHeldAlone, self.panel.isVisible else { return }
-                self.workspace.showShortcutsOverlay()
-            }
-        } else {
-            let wasHolding = commandHeldAlone
-            commandHeldAlone = false
-            cmdHoldTask?.cancel()
-            cmdHoldTask = nil
-            if wasHolding || (!cmdDown && !workspace.shortcutsPinned) {
-                workspace.hideShortcutsOverlay()
-            }
-        }
     }
 
     private func handleKeyDown(_ event: NSEvent) -> NSEvent? {
-        // Any key while holding ⌘ cancels the hold-to-reveal gesture
-        if commandHeldAlone {
-            commandHeldAlone = false
-            cmdHoldTask?.cancel()
-            cmdHoldTask = nil
-            if !workspace.shortcutsPinned {
-                workspace.hideShortcutsOverlay()
-            }
-        }
-
         // Escape — dismiss overlay / library / find / panel
         if event.keyCode == UInt16(kVK_Escape) {
             guard panel.isVisible else { return event }
@@ -102,6 +50,10 @@ final class ShortcutMonitor {
                 return nil
             }
             if workspace.libraryVisible {
+                if workspace.pendingLibraryDeleteID != nil {
+                    workspace.cancelPendingLibraryDelete()
+                    return nil
+                }
                 if workspace.isLibraryRenaming {
                     // Let the rename field handle typing; Esc cancels
                     if event.keyCode == UInt16(kVK_Escape) {
@@ -177,8 +129,11 @@ final class ShortcutMonitor {
             }
         }
 
-        // ⌘⌥⇧N is owned by HotKeyManager (global)
-        if opt && shift && key == "n" {
+        // The global hotkey is owned by HotKeyManager — let it through
+        let hotKey = GeneralSettings.shared
+        if hotKey.hotKeyEnabled,
+           event.keyCode == UInt16(hotKey.hotKeyCode),
+           flags == hotKey.nsModifierFlags {
             return event
         }
 
@@ -280,6 +235,37 @@ final class ShortcutMonitor {
     }
 
     private func handleLibraryKeys(_ event: NSEvent) -> NSEvent? {
+        if workspace.pendingLibraryDeleteID != nil {
+            let flags = event.modifierFlags.intersection([.command, .shift, .option, .control])
+            let key = event.charactersIgnoringModifiers?.lowercased() ?? ""
+
+            if event.keyCode == UInt16(kVK_LeftArrow)
+                || (event.keyCode == UInt16(kVK_Tab) && flags.contains(.shift)) {
+                workspace.movePendingLibraryDeleteFocus(forward: false)
+                return nil
+            }
+            if event.keyCode == UInt16(kVK_RightArrow)
+                || (event.keyCode == UInt16(kVK_Tab) && !flags.contains(.command)) {
+                workspace.movePendingLibraryDeleteFocus(forward: true)
+                return nil
+            }
+            if event.keyCode == UInt16(kVK_Return) || event.keyCode == UInt16(kVK_ANSI_KeypadEnter) {
+                workspace.activatePendingLibraryDeleteFocus()
+                return nil
+            }
+            if key == "c" && flags.isEmpty {
+                workspace.cancelPendingLibraryDelete()
+                return nil
+            }
+            if key == "d" && flags.isEmpty {
+                workspace.confirmPendingLibraryDelete()
+                return nil
+            }
+
+            // Keep the editor and library list inactive while confirming.
+            return nil
+        }
+
         // While renaming, only Esc is intercepted above; Return commits via TextField.
         // Also handle Return here if rename field didn't.
         if workspace.isLibraryRenaming {

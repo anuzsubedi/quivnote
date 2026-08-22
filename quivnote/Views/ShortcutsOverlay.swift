@@ -6,7 +6,6 @@
 import SwiftUI
 
 struct ShortcutsOverlay: View {
-    var pinned: Bool
     var onDismiss: () -> Void
 
     private let sections: [(title: String, rows: [(keys: [String], label: String)])] = [
@@ -15,7 +14,7 @@ struct ShortcutsOverlay: View {
             [
                 (["⌘", "⌥", "⇧", "N"], "Show / hide note"),
                 (["⌘", ","], "Appearance"),
-                (["⌘", "/"], "Pin this sheet"),
+                (["⌘", "/"], "Show / hide commands"),
                 (["Esc"], "Dismiss"),
                 (["⌘", "Q"], "Quit"),
             ]
@@ -112,24 +111,21 @@ struct ShortcutsOverlay: View {
                         .font(.system(size: 17, weight: .bold, design: .default))
                         .foregroundStyle(QuivPalette.ink)
                 }
-                Text(pinned ? "Pinned — press ⌘/ to close" : "Hold ⌘ · release to hide")
+                Text("Press ⌘/ again to close")
                     .font(.system(size: 11, weight: .medium))
                     .foregroundStyle(QuivPalette.muted.opacity(0.6))
             }
             Spacer()
-            HStack(spacing: 8) {
-                HoldHint(pinned: pinned)
-                Button(action: onDismiss) {
-                    Image(systemName: "xmark")
-                        .font(.system(size: 9, weight: .bold))
-                        .foregroundStyle(QuivPalette.muted.opacity(0.78))
-                        .frame(width: 24, height: 24)
-                        .background(QuivPalette.control, in: Circle())
-                }
-                .buttonStyle(.plain)
-                .help("Close Shortcuts")
-                .accessibilityLabel("Close Shortcuts")
+            Button(action: onDismiss) {
+                Image(systemName: "xmark")
+                    .font(.system(size: 9, weight: .bold))
+                    .foregroundStyle(QuivPalette.muted.opacity(0.78))
+                    .frame(width: 24, height: 24)
+                    .background(QuivPalette.control, in: Circle())
             }
+            .buttonStyle(.plain)
+            .help("Close Shortcuts")
+            .accessibilityLabel("Close Shortcuts")
         }
         .padding(.horizontal, 22)
         .padding(.top, 18)
@@ -164,23 +160,6 @@ struct ShortcutsOverlay: View {
             .padding(.bottom, 20)
         }
         .scrollIndicators(.automatic)
-    }
-}
-
-private struct HoldHint: View {
-    var pinned: Bool
-
-    var body: some View {
-        HStack(spacing: 5) {
-            KeyCap(pinned ? "⌘/" : "⌘", compact: true)
-            Text(pinned ? "unpin" : "hold")
-                .font(.system(size: 10, weight: .medium))
-                .foregroundStyle(QuivPalette.muted.opacity(0.6))
-        }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 5)
-        .background(QuivPalette.accent.opacity(0.08), in: Capsule())
-        .overlay(Capsule().strokeBorder(QuivPalette.accent.opacity(0.1), lineWidth: 0.5))
     }
 }
 
@@ -236,7 +215,7 @@ private struct KeyCap: View {
 #Preview {
     ZStack {
         QuivPalette.base
-        ShortcutsOverlay(pinned: false, onDismiss: {})
+        ShortcutsOverlay(onDismiss: {})
     }
     .frame(width: 720, height: 520)
 }

@@ -8,6 +8,7 @@ import SwiftUI
 
 struct NoteEditorView: View {
     private enum SearchField: Hashable { case find, replace }
+    private enum CloseActionStyle: Equatable { case neutral, destructive, primary }
 
     @Bindable var workspace: Workspace
     var focus: PanelFocus
@@ -38,13 +39,20 @@ struct NoteEditorView: View {
                 }
             }
 
+            if !workspace.libraryVisible,
+               !workspace.shortcutsVisible,
+               !workspace.settingsVisible,
+               workspace.pendingCloseTabID == nil {
+                commandsLauncher
+            }
+
             if workspace.libraryVisible {
                 LibraryBrowser(workspace: workspace)
                     .transition(.opacity.combined(with: .scale(scale: 0.97)))
             }
 
             if workspace.shortcutsVisible {
-                ShortcutsOverlay(pinned: workspace.shortcutsPinned) {
+                ShortcutsOverlay {
                     workspace.shortcutsPinned = false
                     workspace.hideShortcutsOverlay(force: true)
                 }
@@ -114,6 +122,48 @@ struct NoteEditorView: View {
             .frame(height: 0.5)
     }
 
+    private var commandsLauncher: some View {
+        Button {
+            workspace.toggleShortcutsPinned()
+        } label: {
+            HStack(spacing: 7) {
+                HStack(spacing: 3) {
+                    commandsKeyCap("⌘")
+                    commandsKeyCap("/")
+                }
+
+                Text("Commands")
+                    .font(.system(size: 10.5, weight: .medium))
+                    .foregroundStyle(QuivPalette.muted.opacity(0.68))
+            }
+            .padding(.horizontal, 8)
+            .padding(.vertical, 6)
+            .background {
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    .fill(hoveredToolbarItem == "commands" ? QuivPalette.control : .clear)
+            }
+        }
+        .buttonStyle(.plain)
+        .help("Show Commands (⌘/)")
+        .accessibilityLabel("Show Commands")
+        .accessibilityHint("Keyboard shortcut Command slash")
+        .onHover { hoveredToolbarItem = $0 ? "commands" : nil }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
+        .padding(10)
+    }
+
+    private func commandsKeyCap(_ label: String) -> some View {
+        Text(label)
+            .font(.system(size: 9.5, weight: .semibold, design: .monospaced))
+            .foregroundStyle(QuivPalette.muted.opacity(0.72))
+            .frame(minWidth: 17, minHeight: 17)
+            .background(QuivPalette.ink.opacity(0.045), in: RoundedRectangle(cornerRadius: 4))
+            .overlay {
+                RoundedRectangle(cornerRadius: 4)
+                    .strokeBorder(QuivPalette.ink.opacity(0.07), lineWidth: 0.5)
+            }
+    }
+
     // MARK: - Chrome Header
 
     private var chromeHeader: some View {
@@ -140,14 +190,22 @@ struct NoteEditorView: View {
                 statusBadge(tab)
             }
 
+            if let storageError = workspace.storageError {
+                storageErrorBadge(storageError)
+            }
+
             if let tab = workspace.selectedTab {
                 editorModeControl(tab)
             }
 
-            toolbarButton("gearshape", id: "settings", label: "Open Appearance Settings", active: workspace.settingsVisible) {
-                workspace.showSettings()
+            toolbarButton("gearshape", id: "settings", label: "Open Settings", active: workspace.settingsVisible) {
+                if workspace.settingsVisible {
+                    workspace.hideSettings()
+                } else {
+                    workspace.showSettings()
+                }
             }
-            .help("Appearance (⌘,)")
+            .help("Settings (⌘,)")
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 8)
@@ -243,6 +301,23 @@ struct NoteEditorView: View {
         .padding(.vertical, 3)
         .background(QuivPalette.control, in: Capsule())
         .accessibilityElement(children: .combine)
+    }
+
+    private func storageErrorBadge(_ message: String) -> some View {
+        HStack(spacing: 4) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(.system(size: 9, weight: .semibold))
+            Text("Not saved")
+                .font(.system(size: 10, weight: .semibold, design: .monospaced))
+        }
+        .foregroundStyle(.red.opacity(0.9))
+        .padding(.horizontal, 8)
+        .padding(.vertical, 3)
+        .background(QuivPalette.control, in: Capsule())
+        .help(message)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Storage error")
+        .accessibilityValue(message)
     }
 
     // MARK: - Tab Bar
@@ -435,109 +510,144 @@ struct NoteEditorView: View {
         return VStack(spacing: 0) {
             separator
 
-            HStack(alignment: .center, spacing: 16) {
-                VStack(alignment: .leading, spacing: 2) {
-                    HStack(spacing: 5) {
-                        Image(systemName: "exclamationmark.triangle.fill")
-                            .font(.system(size: 10))
-                            .foregroundStyle(QuivPalette.accent.opacity(0.8))
-                        Text("Unsaved changes")
-                            .font(.system(size: 12, weight: .semibold, design: .default))
-                            .foregroundStyle(QuivPalette.ink)
-                    }
-                    Text("Close \"\(title)\"?")
-                        .font(.system(size: 11, weight: .regular))
-                        .foregroundStyle(QuivPalette.muted)
+            HStack(alignment: .center, spacing: 14) {
+                VStack(alignment: .leading, spacing: 1) {
+                    Text("Save changes to “\(title)”?")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(QuivPalette.ink)
+                        .lineLimit(1)
+                    Text("Your changes will be lost if you don’t save them.")
+                        .font(.system(size: 10.5))
+                        .foregroundStyle(QuivPalette.muted.opacity(0.86))
                         .lineLimit(1)
                 }
 
-                Spacer(minLength: 8)
+                Spacer(minLength: 16)
 
-                HStack(spacing: 6) {
+                HStack(spacing: 7) {
                     closeChip(
                         title: "Cancel",
-                        hint: "C",
-                        focused: focus == .cancel
+                        shortcut: "C",
+                        focused: focus == .cancel,
+                        style: .neutral
                     ) {
                         workspace.cancelPendingClose()
                     }
                     closeChip(
                         title: "Don't Save",
-                        hint: "D",
-                        focused: focus == .discard
+                        shortcut: "D",
+                        focused: focus == .discard,
+                        style: .destructive
                     ) {
                         workspace.confirmPendingCloseDiscard()
                     }
                     closeChip(
                         title: "Save",
-                        hint: "↩",
+                        shortcut: "↩",
                         focused: focus == .save,
-                        prominent: true
+                        style: .primary
                     ) {
                         workspace.confirmPendingCloseSave()
                     }
                 }
             }
             .padding(.horizontal, 14)
-            .padding(.vertical, 10)
-            .background(QuivPalette.surface.opacity(0.95))
+            .padding(.vertical, 9)
+            .background(QuivPalette.surface.opacity(0.88))
         }
     }
 
     private func closeChip(
         title: String,
-        hint: String,
+        shortcut: String,
         focused: Bool,
-        prominent: Bool = false,
+        style: CloseActionStyle,
         action: @escaping () -> Void
     ) -> some View {
         Button(action: action) {
-            HStack(spacing: 5) {
+            HStack(spacing: 6) {
                 Text(title)
-                    .font(.system(size: 11, weight: prominent ? .semibold : .medium))
-                Text(hint)
+                    .font(.system(size: 11, weight: style == .primary ? .semibold : .medium))
+
+                Text(shortcut)
                     .font(.system(size: 9, weight: .semibold, design: .monospaced))
-                    .foregroundStyle(
-                        prominent
-                            ? QuivPalette.onAccent.opacity(focused ? 0.9 : 0.72)
-                            : QuivPalette.muted.opacity(focused ? 0.9 : 0.5)
-                    )
-                    .padding(.horizontal, 4)
-                    .padding(.vertical, 2)
+                    .foregroundStyle(closeShortcutForeground(style))
+                    .frame(minWidth: 14, minHeight: 14)
+                    .padding(.horizontal, 2)
                     .background(
-                        (prominent ? QuivPalette.base : QuivPalette.ink)
-                            .opacity(prominent ? (focused ? 0.2 : 0.12) : (focused ? 0.1 : 0.05)),
-                        in: RoundedRectangle(cornerRadius: 3, style: .continuous)
+                        closeShortcutBackground(style),
+                        in: RoundedRectangle(cornerRadius: 3.5, style: .continuous)
                     )
+                    .overlay {
+                        RoundedRectangle(cornerRadius: 3.5, style: .continuous)
+                            .strokeBorder(closeShortcutBorder(style), lineWidth: 0.5)
+                    }
             }
-            .foregroundStyle(prominent ? QuivPalette.onAccent : QuivPalette.ink.opacity(0.85))
-            .padding(.horizontal, 10)
-            .padding(.vertical, 6)
-            .background {
-                if prominent {
-                    Capsule().fill(QuivPalette.accent.opacity(focused ? 1 : 0.85))
-                } else if focused {
-                    Capsule().fill(QuivPalette.ink.opacity(0.10))
-                } else {
-                    Capsule().fill(QuivPalette.ink.opacity(0.04))
+                .foregroundStyle(closeActionForeground(style))
+                .frame(minWidth: style == .primary ? 48 : 64)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 6)
+                .background {
+                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                        .fill(closeActionBackground(style, focused: focused))
                 }
-            }
-            .overlay {
-                Capsule()
-                    .strokeBorder(
-                        focused && !prominent ? QuivPalette.ink.opacity(0.15) : .clear,
-                        lineWidth: 0.5
-                    )
-            }
-            .scaleEffect(focused ? 1.02 : 1)
-            .shadow(
-                color: focused && prominent ? QuivPalette.accent.opacity(0.3) : .clear,
-                radius: 8,
-                y: 2
-            )
+                .overlay {
+                    RoundedRectangle(cornerRadius: 6, style: .continuous)
+                        .strokeBorder(
+                            focused ? closeActionFocusBorder(style) : QuivPalette.ink.opacity(0.07),
+                            lineWidth: focused ? 1 : 0.5
+                        )
+                }
         }
         .buttonStyle(.plain)
+        .help("\(title) (\(shortcut))")
+        .accessibilityHint("Keyboard shortcut: \(shortcut == "↩" ? "Return" : shortcut)")
         .animation(.easeOut(duration: 0.12), value: workspace.pendingCloseFocus)
+    }
+
+    private func closeShortcutForeground(_ style: CloseActionStyle) -> Color {
+        style == .primary
+            ? QuivPalette.onAccent.opacity(0.82)
+            : QuivPalette.muted.opacity(0.82)
+    }
+
+    private func closeShortcutBackground(_ style: CloseActionStyle) -> Color {
+        style == .primary
+            ? QuivPalette.base.opacity(0.16)
+            : QuivPalette.ink.opacity(0.055)
+    }
+
+    private func closeShortcutBorder(_ style: CloseActionStyle) -> Color {
+        style == .primary
+            ? QuivPalette.onAccent.opacity(0.12)
+            : QuivPalette.ink.opacity(0.08)
+    }
+
+    private func closeActionForeground(_ style: CloseActionStyle) -> Color {
+        switch style {
+        case .neutral: QuivPalette.ink.opacity(0.82)
+        case .destructive: Color(nsColor: .systemRed).opacity(0.88)
+        case .primary: QuivPalette.onAccent
+        }
+    }
+
+    private func closeActionBackground(_ style: CloseActionStyle, focused: Bool) -> Color {
+        switch style {
+        case .neutral:
+            focused ? QuivPalette.ink.opacity(0.10) : QuivPalette.control
+        case .destructive:
+            focused ? Color(nsColor: .systemRed).opacity(0.13) : QuivPalette.control
+        case .primary:
+            QuivPalette.accent.opacity(focused ? 1 : 0.88)
+        }
+    }
+
+    private func closeActionFocusBorder(_ style: CloseActionStyle) -> Color {
+        switch style {
+        case .neutral: QuivPalette.ink.opacity(0.22)
+        case .destructive: Color(nsColor: .systemRed).opacity(0.45)
+        case .primary: QuivPalette.onAccent.opacity(0.28)
+        }
     }
 
     // MARK: - Editor Area
@@ -595,9 +705,15 @@ struct NoteEditorView: View {
                         showLineNumbers: tab.showLineNumbers,
                         mode: tab.editorMode,
                         tabID: tab.id,
-                        onStatus: { workspace.setFindStatus($0) }
+                        onStatus: { workspace.setFindStatus($0) },
+                        interactionDisabled: workspace.settingsVisible
+                            || workspace.libraryVisible
+                            || workspace.shortcutsVisible
                     )
                     .padding(.horizontal, 2)
+                    // Keep AppKit ruler drawing inside the editor area rather
+                    // than allowing it to bleed into the title and tab chrome.
+                    .clipped()
 
                     if tab.text.isEmpty {
                         VStack(alignment: .leading, spacing: 5) {
@@ -605,12 +721,12 @@ struct NoteEditorView: View {
                                 .font(.system(size: 15.5))
                                 .foregroundStyle(QuivPalette.muted.opacity(0.52))
                             Text(tab.editorMode == .wysiwyg
-                                 ? "Formatting appears as you complete Markdown  ·  Hold ⌘ for shortcuts"
-                                 : "Markdown source  ·  Hold ⌘ for shortcuts")
+                                 ? "Formatting appears as you complete Markdown  ·  ⌘/ for commands"
+                                 : "Markdown source  ·  ⌘/ for commands")
                                 .font(.system(size: 10.5, weight: .medium))
                                 .foregroundStyle(QuivPalette.muted.opacity(0.46))
                         }
-                        .padding(.leading, tab.showLineNumbers ? 66 : 26)
+                        .padding(.leading, tab.showLineNumbers ? 46 : 26)
                         .padding(.top, 22)
                         .allowsHitTesting(false)
                         .accessibilityHidden(true)
