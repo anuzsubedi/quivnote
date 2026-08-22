@@ -27,6 +27,8 @@ final class Workspace {
     var libraryFocusID: UUID?
     var libraryRenamingID: UUID?
     var libraryRenameDraft = ""
+    var pendingLibraryDeleteID: UUID?
+    var pendingLibraryDeleteFocus: PendingLibraryDeleteAction = .delete
     var saveFlash = false
     /// Non-nil when the most recent library or workspace write failed; drives
     /// the error banner in the editor status bar until the next successful op.
@@ -39,6 +41,11 @@ final class Workspace {
         case cancel
         case discard
         case save
+    }
+
+    enum PendingLibraryDeleteAction: Int, CaseIterable {
+        case cancel
+        case delete
     }
 
     let library = NoteLibrary()
@@ -59,6 +66,11 @@ final class Workspace {
     var focusedLibraryNote: LibraryNote? {
         guard let libraryFocusID else { return nil }
         return filteredLibraryNotes.first { $0.id == libraryFocusID }
+    }
+
+    var pendingLibraryDeleteNote: LibraryNote? {
+        guard let pendingLibraryDeleteID else { return nil }
+        return library.note(id: pendingLibraryDeleteID)
     }
 
     var isLibraryRenaming: Bool {
@@ -262,6 +274,7 @@ final class Workspace {
         library.reload()
         libraryQuery = ""
         libraryRenamingID = nil
+        pendingLibraryDeleteID = nil
         libraryVisible = true
         syncLibraryFocus(reset: true)
     }
@@ -286,6 +299,7 @@ final class Workspace {
         libraryFocusID = nil
         libraryRenamingID = nil
         libraryRenameDraft = ""
+        pendingLibraryDeleteID = nil
     }
 
     func syncLibraryFocus(reset: Bool = false) {
@@ -348,9 +362,38 @@ final class Workspace {
 
     func deleteFocusedLibraryNote() {
         guard let note = focusedLibraryNote else { return }
+        pendingLibraryDeleteID = note.id
+        pendingLibraryDeleteFocus = .delete
+    }
+
+    func cancelPendingLibraryDelete() {
+        pendingLibraryDeleteID = nil
+        pendingLibraryDeleteFocus = .delete
+    }
+
+    func movePendingLibraryDeleteFocus(forward: Bool) {
+        pendingLibraryDeleteFocus = pendingLibraryDeleteFocus == .cancel ? .delete : .cancel
+    }
+
+    func activatePendingLibraryDeleteFocus() {
+        switch pendingLibraryDeleteFocus {
+        case .cancel: cancelPendingLibraryDelete()
+        case .delete: confirmPendingLibraryDelete()
+        }
+    }
+
+    func confirmPendingLibraryDelete() {
+        guard let note = pendingLibraryDeleteNote else {
+            cancelPendingLibraryDelete()
+            return
+        }
+
         let notesBefore = filteredLibraryNotes
         let index = notesBefore.firstIndex(where: { $0.id == note.id }) ?? 0
-        deleteLibraryNote(note)
+        guard deleteLibraryNote(note) else { return }
+        pendingLibraryDeleteID = nil
+        pendingLibraryDeleteFocus = .delete
+
         let notes = filteredLibraryNotes
         if notes.isEmpty {
             libraryFocusID = nil

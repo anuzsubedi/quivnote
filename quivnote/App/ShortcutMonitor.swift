@@ -102,6 +102,10 @@ final class ShortcutMonitor {
                 return nil
             }
             if workspace.libraryVisible {
+                if workspace.pendingLibraryDeleteID != nil {
+                    workspace.cancelPendingLibraryDelete()
+                    return nil
+                }
                 if workspace.isLibraryRenaming {
                     // Let the rename field handle typing; Esc cancels
                     if event.keyCode == UInt16(kVK_Escape) {
@@ -283,6 +287,37 @@ final class ShortcutMonitor {
     }
 
     private func handleLibraryKeys(_ event: NSEvent) -> NSEvent? {
+        if workspace.pendingLibraryDeleteID != nil {
+            let flags = event.modifierFlags.intersection([.command, .shift, .option, .control])
+            let key = event.charactersIgnoringModifiers?.lowercased() ?? ""
+
+            if event.keyCode == UInt16(kVK_LeftArrow)
+                || (event.keyCode == UInt16(kVK_Tab) && flags.contains(.shift)) {
+                workspace.movePendingLibraryDeleteFocus(forward: false)
+                return nil
+            }
+            if event.keyCode == UInt16(kVK_RightArrow)
+                || (event.keyCode == UInt16(kVK_Tab) && !flags.contains(.command)) {
+                workspace.movePendingLibraryDeleteFocus(forward: true)
+                return nil
+            }
+            if event.keyCode == UInt16(kVK_Return) || event.keyCode == UInt16(kVK_ANSI_KeypadEnter) {
+                workspace.activatePendingLibraryDeleteFocus()
+                return nil
+            }
+            if key == "c" && flags.isEmpty {
+                workspace.cancelPendingLibraryDelete()
+                return nil
+            }
+            if key == "d" && flags.isEmpty {
+                workspace.confirmPendingLibraryDelete()
+                return nil
+            }
+
+            // Keep the editor and library list inactive while confirming.
+            return nil
+        }
+
         // While renaming, only Esc is intercepted above; Return commits via TextField.
         // Also handle Return here if rename field didn't.
         if workspace.isLibraryRenaming {
