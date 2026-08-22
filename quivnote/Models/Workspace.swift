@@ -58,9 +58,7 @@ final class Workspace {
     var filteredLibraryNotes: [LibraryNote] {
         let q = libraryQuery.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         guard !q.isEmpty else { return library.notes }
-        return library.notes.filter {
-            $0.title.lowercased().contains(q) || $0.body.lowercased().contains(q)
-        }
+        return library.notes.filter { $0.searchText.contains(q) }
     }
 
     var focusedLibraryNote: LibraryNote? {

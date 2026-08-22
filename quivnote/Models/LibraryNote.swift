@@ -7,10 +7,24 @@ import Foundation
 
 struct LibraryNote: Identifiable, Codable, Equatable, Hashable {
     var id: UUID
-    var title: String
-    var body: String
+    var title: String {
+        didSet { searchText = Self.makeSearchText(title: title, body: body) }
+    }
+    var body: String {
+        didSet { searchText = Self.makeSearchText(title: title, body: body) }
+    }
     var createdAt: Date
     var updatedAt: Date
+    private(set) var searchText: String
+
+    init(id: UUID, title: String, body: String, createdAt: Date, updatedAt: Date) {
+        self.id = id
+        self.title = title
+        self.body = body
+        self.createdAt = createdAt
+        self.updatedAt = updatedAt
+        self.searchText = Self.makeSearchText(title: title, body: body)
+    }
 
     var preview: String {
         let lines = body
@@ -18,6 +32,10 @@ struct LibraryNote: Identifiable, Codable, Equatable, Hashable {
             .map { $0.trimmingCharacters(in: .whitespaces) }
             .filter { !$0.isEmpty && !$0.hasPrefix("#") }
         return lines.first ?? "Empty note"
+    }
+
+    private static func makeSearchText(title: String, body: String) -> String {
+        "\(title)\n\(body)".lowercased()
     }
 }
 
@@ -32,13 +50,15 @@ extension LibraryNote {
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
-        id = try container.decode(UUID.self, forKey: .id)
-        title = try container.decode(String.self, forKey: .title)
         // Older index files stored the body here. Keep decoding it so those
         // files remain readable, but NoteLibrary will prefer the .md file.
-        body = try container.decodeIfPresent(String.self, forKey: .body) ?? ""
-        createdAt = try container.decode(Date.self, forKey: .createdAt)
-        updatedAt = try container.decode(Date.self, forKey: .updatedAt)
+        self.init(
+            id: try container.decode(UUID.self, forKey: .id),
+            title: try container.decode(String.self, forKey: .title),
+            body: try container.decodeIfPresent(String.self, forKey: .body) ?? "",
+            createdAt: try container.decode(Date.self, forKey: .createdAt),
+            updatedAt: try container.decode(Date.self, forKey: .updatedAt)
+        )
     }
 
     func encode(to encoder: Encoder) throws {
