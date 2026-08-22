@@ -66,28 +66,36 @@ struct NoteEditorView: View {
                 SettingsOverlay(workspace: workspace)
                     .transition(.opacity.combined(with: .scale(scale: 0.97)))
             }
+
+            if workspace.launchAtLoginPromptVisible {
+                LaunchAtLoginPromptOverlay(
+                    onYes: {
+                        GeneralSettings.shared.launchAtLogin = true
+                        LaunchAtLoginPrompt.record(answer: .yes)
+                        workspace.hideLaunchAtLoginPrompt()
+                    },
+                    onLater: {
+                        LaunchAtLoginPrompt.record(answer: .later)
+                        workspace.hideLaunchAtLoginPrompt()
+                    },
+                    onNever: {
+                        LaunchAtLoginPrompt.record(answer: .never)
+                        workspace.hideLaunchAtLoginPrompt()
+                    }
+                )
+            }
         }
         .tint(currentAccent.color)
         .animation(reduceMotion ? nil : .easeOut(duration: 0.2), value: workspace.shortcutsVisible)
         .animation(reduceMotion ? nil : .easeOut(duration: 0.2), value: workspace.libraryVisible)
         .animation(reduceMotion ? nil : .easeOut(duration: 0.2), value: workspace.settingsVisible)
+        .animation(reduceMotion ? nil : .easeOut(duration: 0.2), value: workspace.launchAtLoginPromptVisible)
         .animation(reduceMotion ? nil : .easeOut(duration: 0.18), value: workspace.pendingCloseTabID)
         .frame(minWidth: 520, minHeight: 360)
         .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .strokeBorder(
-                    LinearGradient(
-                        colors: [
-                            QuivPalette.ink.opacity(0.10),
-                            QuivPalette.accent.opacity(0.08),
-                            QuivPalette.ink.opacity(0.05),
-                        ],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    ),
-                    lineWidth: 0.5
-                )
+                .strokeBorder(QuivPalette.ink.opacity(0.10), lineWidth: 0.5)
         }
         .onChange(of: focus.generation) { _, _ in
             NotificationCenter.default.post(name: .quivFocusEditor, object: nil)

@@ -124,6 +124,23 @@ struct LibraryBrowser: View {
                 .foregroundStyle(QuivPalette.ink)
                 .focused($searchFieldFocused)
                 .accessibilityLabel("Search notes")
+                .onKeyPress(.escape) {
+                    if workspace.libraryQuery.isEmpty {
+                        workspace.hideLibrary()
+                    } else {
+                        workspace.libraryQuery = ""
+                        searchFieldFocused = true
+                    }
+                    return .handled
+                }
+                .onKeyPress(.downArrow) {
+                    guard workspace.libraryQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                        return .ignored
+                    }
+                    workspace.syncLibraryFocus(reset: true)
+                    searchFieldFocused = false
+                    return .handled
+                }
             if !workspace.libraryQuery.isEmpty {
                 Button {
                     workspace.libraryQuery = ""
@@ -138,9 +155,7 @@ struct LibraryBrowser: View {
                 .help("Clear search")
             }
         }
-        .onAppear {
-            searchFieldFocused = true
-        }
+        .task { searchFieldFocused = true }
         .padding(.horizontal, 10)
         .padding(.vertical, 8)
         .background(QuivPalette.control, in: RoundedRectangle(cornerRadius: 7, style: .continuous))
