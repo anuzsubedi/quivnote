@@ -140,7 +140,6 @@ struct NoteTextView: NSViewRepresentable {
         textView.textColor = QuivPalette.nsInk
         textView.insertionPointColor = QuivPalette.nsAccent
         textView.setAccessibilityLabel("Markdown note editor")
-        context.coordinator.applyRendering()
         textView.setAccessibilityHelp(mode == .wysiwyg ? "Write Markdown with live formatting" : "Edit Markdown source")
 
         let disabled = context.coordinator.parent.interactionDisabled
@@ -157,6 +156,37 @@ struct NoteTextView: NSViewRepresentable {
     }
 
     final class Coordinator: NSObject, NSTextViewDelegate {
+        private static func makeRegex(
+            _ pattern: String,
+            options: NSRegularExpression.Options = []
+        ) -> NSRegularExpression {
+            try! NSRegularExpression(pattern: pattern, options: options)
+        }
+
+        private static let sourceHeadingRegex = makeRegex(#"^(#{1,6})\s+(.+)$"#, options: .anchorsMatchLines)
+        private static let sourceStrongRegex = makeRegex(#"\*\*(.+?)\*\*"#)
+        private static let sourceUnderscoreStrongRegex = makeRegex(#"__(.+?)__"#)
+        private static let sourceAsteriskItalicRegex = makeRegex(#"(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)"#)
+        private static let sourceUnderscoreItalicRegex = makeRegex(#"(?<!_)_(?!_)(.+?)(?<!_)_(?!_)"#)
+        private static let sourceCodeRegex = makeRegex(#"`([^`]+)`"#)
+        private static let sourceStrikethroughRegex = makeRegex(#"~~([^\n~]+)~~"#)
+        private static let sourceUnderlineRegex = makeRegex(#"(?i)<u>([^<\n]+)</u>"#)
+
+        private static let liveHeadingRegex = makeRegex(#"^( {0,3})(#{1,6})[\t ]+(.+?)[\t ]*#*[\t ]*$"#, options: .anchorsMatchLines)
+        private static let liveCodeRegex = makeRegex(#"(?<!\\)`([^`\n]+)`"#)
+        private static let liveStrongRegex = makeRegex(#"(?<!\\)\*\*([^\n*](?:[^\n]*?[^\n*])?)\*\*"#)
+        private static let liveUnderscoreStrongRegex = makeRegex(#"(?<![\\_\p{L}\p{N}])__(?!_)([^\n_](?:[^\n]*?[^\n_])?)__(?![_\p{L}\p{N}])"#)
+        private static let liveAsteriskItalicRegex = makeRegex(#"(?<![\\*])\*(?!\*)([^\n*]+?)\*(?!\*)"#)
+        private static let liveUnderscoreItalicRegex = makeRegex(#"(?<![\\_\p{L}\p{N}])_(?!_)([^\n_]+?)_(?![_\p{L}\p{N}])"#)
+        private static let liveStrikethroughRegex = makeRegex(#"(?<!\\)~~([^\n~]+)~~"#)
+        private static let excludedLinkRegex = makeRegex(#"!?\[[^\]\n]+\]\([^\)\n]+\)"#)
+        private static let quoteRegex = makeRegex(#"^( {0,3}>[\t ]?)(.+)$"#, options: .anchorsMatchLines)
+        private static let listRegex = makeRegex(#"^( {0,3})((?:[-+*])|(?:\d+[.)]))([\t ]+)(?:\[([ xX])\][\t ]+)?(.+)$"#, options: .anchorsMatchLines)
+        private static let ruleRegex = makeRegex(#"^( {0,3})(?:(?:\*[\t ]*){3,}|(?:-[\t ]*){3,}|(?:_[\t ]*){3,})$"#, options: .anchorsMatchLines)
+        private static let imageRegex = makeRegex(#"(?<!\\)!\[([^\]\n]*)\]\(([^\)\n]+)\)"#)
+        private static let autolinkRegex = makeRegex(#"<((?:https?://|mailto:)[^>\n]+)>"#, options: .caseInsensitive)
+        private static let linkRegex = makeRegex(#"(?<![\\!])\[([^\]\n]+)\]\(([^\)\n]+)\)"#)
+
         var parent: NoteTextView
         weak var textView: NSTextView?
         var tabID: UUID
@@ -293,28 +323,24 @@ struct NoteTextView: NSViewRepresentable {
             resetAttributes(storage)
 
             // Headings — accent color, bolder
-            let headingPattern = #"^(#{1,6})\s+(.+)$"#
-            if let headingRegex = try? NSRegularExpression(pattern: headingPattern, options: .anchorsMatchLines) {
-                headingRegex.enumerateMatches(in: storage.string, options: [], range: full) { match, _, _ in
-                    guard let match, match.numberOfRanges >= 3 else { return }
-                    let hashRange = match.range(at: 1)
-                    let textRange = match.range(at: 2)
-                    storage.addAttribute(.foregroundColor, value: QuivPalette.nsAccent, range: textRange)
-                    storage.addAttribute(.font, value: quivBodyFont(weight: .bold), range: textRange)
-                    storage.addAttribute(.foregroundColor, value: QuivPalette.nsMuted.withAlphaComponent(0.5), range: hashRange)
-                }
+            Self.sourceHeadingRegex.enumerateMatches(in: storage.string, options: [], range: full) { match, _, _ in
+                guard let match, match.numberOfRanges >= 3 else { return }
+                let hashRange = match.range(at: 1)
+                let textRange = match.range(at: 2)
+                storage.addAttribute(.foregroundColor, value: QuivPalette.nsAccent, range: textRange)
+                storage.addAttribute(.font, value: quivBodyFont(weight: .bold), range: textRange)
+                storage.addAttribute(.foregroundColor, value: QuivPalette.nsMuted.withAlphaComponent(0.5), range: hashRange)
             }
 
-            let patterns: [(String, NSFont, NSColor?)] = [
-                (#"\*\*(.+?)\*\*"#, quivBodyFont(weight: .semibold), nil),
-                (#"__(.+?)__"#, quivBodyFont(weight: .semibold), nil),
-                (#"(?<!\*)\*(?!\*)(.+?)(?<!\*)\*(?!\*)"#, quivBodyFont().withItalicTrait, nil),
-                (#"(?<!_)_(?!_)(.+?)(?<!_)_(?!_)"#, quivBodyFont().withItalicTrait, nil),
-                (#"`([^`]+)`"#, .monospacedSystemFont(ofSize: CGFloat(GeneralSettings.shared.editorFontSize) - 1, weight: .regular), QuivPalette.nsAccent.withAlphaComponent(0.12)),
+            let patterns: [(NSRegularExpression, NSFont, NSColor?)] = [
+                (Self.sourceStrongRegex, quivBodyFont(weight: .semibold), nil),
+                (Self.sourceUnderscoreStrongRegex, quivBodyFont(weight: .semibold), nil),
+                (Self.sourceAsteriskItalicRegex, quivBodyFont().withItalicTrait, nil),
+                (Self.sourceUnderscoreItalicRegex, quivBodyFont().withItalicTrait, nil),
+                (Self.sourceCodeRegex, .monospacedSystemFont(ofSize: CGFloat(GeneralSettings.shared.editorFontSize) - 1, weight: .regular), QuivPalette.nsAccent.withAlphaComponent(0.12)),
             ]
 
-            for (pattern, font, background) in patterns {
-                guard let regex = try? NSRegularExpression(pattern: pattern) else { continue }
+            for (regex, font, background) in patterns {
                 regex.enumerateMatches(in: storage.string, options: [], range: full) { match, _, _ in
                     guard let match, match.numberOfRanges >= 2 else { return }
                     let inner = match.range(at: 1)
@@ -336,12 +362,11 @@ struct NoteTextView: NSViewRepresentable {
                 }
             }
 
-            let decoratedPatterns: [(String, NSAttributedString.Key, Any)] = [
-                (#"~~([^\n~]+)~~"#, .strikethroughStyle, NSUnderlineStyle.single.rawValue),
-                (#"(?i)<u>([^<\n]+)</u>"#, .underlineStyle, NSUnderlineStyle.single.rawValue),
+            let decoratedPatterns: [(NSRegularExpression, NSAttributedString.Key, Any)] = [
+                (Self.sourceStrikethroughRegex, .strikethroughStyle, NSUnderlineStyle.single.rawValue),
+                (Self.sourceUnderlineRegex, .underlineStyle, NSUnderlineStyle.single.rawValue),
             ]
-            for (pattern, attribute, value) in decoratedPatterns {
-                guard let regex = try? NSRegularExpression(pattern: pattern) else { continue }
+            for (regex, attribute, value) in decoratedPatterns {
                 regex.enumerateMatches(in: storage.string, options: [], range: full) { match, _, _ in
                     guard let match, match.numberOfRanges >= 2 else { return }
                     storage.addAttribute(attribute, value: value, range: match.range(at: 1))
@@ -371,47 +396,44 @@ struct NoteTextView: NSViewRepresentable {
             resetAttributes(storage)
 
             // A block becomes a heading only after the caret has moved to another line.
-            if let regex = try? NSRegularExpression(pattern: #"^( {0,3})(#{1,6})[\t ]+(.+?)[\t ]*#*[\t ]*$"#, options: .anchorsMatchLines) {
-                regex.enumerateMatches(in: storage.string, options: [], range: full) { match, _, _ in
-                    guard let match, match.numberOfRanges >= 4,
-                          NSIntersectionRange(match.range, activeLine).length == 0,
-                          !isInsideFencedCode(at: match.range.location, source: source)
-                    else { return }
-                    let hashes = match.range(at: 2)
-                    let content = match.range(at: 3)
-                    let level = hashes.length
-                    let base = CGFloat(GeneralSettings.shared.editorFontSize)
-                    let sizes: [CGFloat] = [base + 11.5, base + 7.5, base + 4.5, base + 2.5, base + 1, base]
-                    storage.addAttribute(.font, value: NSFont.systemFont(ofSize: sizes[level - 1], weight: .bold), range: content)
-                    let paragraph = NSMutableParagraphStyle()
-                    paragraph.lineSpacing = 3
-                    paragraph.paragraphSpacingBefore = level <= 2 ? 10 : 6
-                    paragraph.paragraphSpacing = level <= 2 ? 7 : 4
-                    storage.addAttribute(.paragraphStyle, value: paragraph, range: match.range)
-                    hideMarker(match.range(at: 1), in: storage)
-                    hideMarker(hashes, in: storage)
-                    let gap = NSRange(location: NSMaxRange(hashes), length: max(0, content.location - NSMaxRange(hashes)))
-                    hideMarker(gap, in: storage)
-                    let closing = NSRange(location: NSMaxRange(content), length: max(0, NSMaxRange(match.range) - NSMaxRange(content)))
-                    hideMarker(closing, in: storage)
-                }
+            Self.liveHeadingRegex.enumerateMatches(in: storage.string, options: [], range: full) { match, _, _ in
+                guard let match, match.numberOfRanges >= 4,
+                      NSIntersectionRange(match.range, activeLine).length == 0,
+                      !isInsideFencedCode(at: match.range.location, source: source)
+                else { return }
+                let hashes = match.range(at: 2)
+                let content = match.range(at: 3)
+                let level = hashes.length
+                let base = CGFloat(GeneralSettings.shared.editorFontSize)
+                let sizes: [CGFloat] = [base + 11.5, base + 7.5, base + 4.5, base + 2.5, base + 1, base]
+                storage.addAttribute(.font, value: NSFont.systemFont(ofSize: sizes[level - 1], weight: .bold), range: content)
+                let paragraph = NSMutableParagraphStyle()
+                paragraph.lineSpacing = 3
+                paragraph.paragraphSpacingBefore = level <= 2 ? 10 : 6
+                paragraph.paragraphSpacing = level <= 2 ? 7 : 4
+                storage.addAttribute(.paragraphStyle, value: paragraph, range: match.range)
+                hideMarker(match.range(at: 1), in: storage)
+                hideMarker(hashes, in: storage)
+                let gap = NSRange(location: NSMaxRange(hashes), length: max(0, content.location - NSMaxRange(hashes)))
+                hideMarker(gap, in: storage)
+                let closing = NSRange(location: NSMaxRange(content), length: max(0, NSMaxRange(match.range) - NSMaxRange(content)))
+                hideMarker(closing, in: storage)
             }
 
             applyBlockStyles(storage: storage, activeLine: activeLine)
 
-            let codePattern = #"(?<!\\)`([^`\n]+)`"#
-            let codeRanges = matchRanges(pattern: codePattern, in: storage.string)
-            applyCompletedInline(pattern: codePattern, font: .monospacedSystemFont(ofSize: CGFloat(GeneralSettings.shared.editorFontSize) - 1, weight: .regular), background: QuivPalette.nsAccent.withAlphaComponent(0.10), storage: storage, selection: selection)
-            applyCompletedInline(pattern: #"(?<!\\)\*\*([^\n*](?:[^\n]*?[^\n*])?)\*\*"#, font: quivBodyFont(weight: .bold), background: nil, storage: storage, selection: selection, excluding: codeRanges)
-            applyCompletedInline(pattern: #"(?<![\\_\p{L}\p{N}])__(?!_)([^\n_](?:[^\n]*?[^\n_])?)__(?![_\p{L}\p{N}])"#, font: quivBodyFont(weight: .bold), background: nil, storage: storage, selection: selection, excluding: codeRanges)
-            applyCompletedInline(pattern: #"(?<![\\*])\*(?!\*)([^\n*]+?)\*(?!\*)"#, font: quivBodyFont().withItalicTrait, background: nil, storage: storage, selection: selection, excluding: codeRanges)
-            applyCompletedInline(pattern: #"(?<![\\_\p{L}\p{N}])_(?!_)([^\n_]+?)_(?![_\p{L}\p{N}])"#, font: quivBodyFont().withItalicTrait, background: nil, storage: storage, selection: selection, excluding: codeRanges)
-            applyCompletedInline(pattern: #"(?<!\\)~~([^\n~]+)~~"#, font: quivBodyFont(), background: nil, storage: storage, selection: selection, strikethrough: true, excluding: codeRanges)
-            applyCompletedInline(pattern: #"(?i)<u>([^<\n]+)</u>"#, font: quivBodyFont(), background: nil, storage: storage, selection: selection, underline: true, excluding: codeRanges)
+            let codeRanges = matchRanges(regex: Self.liveCodeRegex, in: storage.string)
+            applyCompletedInline(regex: Self.liveCodeRegex, font: .monospacedSystemFont(ofSize: CGFloat(GeneralSettings.shared.editorFontSize) - 1, weight: .regular), background: QuivPalette.nsAccent.withAlphaComponent(0.10), storage: storage, selection: selection)
+            applyCompletedInline(regex: Self.liveStrongRegex, font: quivBodyFont(weight: .bold), background: nil, storage: storage, selection: selection, excluding: codeRanges)
+            applyCompletedInline(regex: Self.liveUnderscoreStrongRegex, font: quivBodyFont(weight: .bold), background: nil, storage: storage, selection: selection, excluding: codeRanges)
+            applyCompletedInline(regex: Self.liveAsteriskItalicRegex, font: quivBodyFont().withItalicTrait, background: nil, storage: storage, selection: selection, excluding: codeRanges)
+            applyCompletedInline(regex: Self.liveUnderscoreItalicRegex, font: quivBodyFont().withItalicTrait, background: nil, storage: storage, selection: selection, excluding: codeRanges)
+            applyCompletedInline(regex: Self.liveStrikethroughRegex, font: quivBodyFont(), background: nil, storage: storage, selection: selection, strikethrough: true, excluding: codeRanges)
+            applyCompletedInline(regex: Self.sourceUnderlineRegex, font: quivBodyFont(), background: nil, storage: storage, selection: selection, underline: true, excluding: codeRanges)
             applyImages(storage: storage, selection: selection, excluding: codeRanges)
             applyLinks(storage: storage, selection: selection, excluding: codeRanges)
             applyAutolinks(storage: storage, selection: selection, excluding: codeRanges)
-            applyDetectedLinks(storage: storage, excluding: codeRanges + matchRanges(pattern: #"!?\[[^\]\n]+\]\([^\)\n]+\)"#, in: storage.string))
+            applyDetectedLinks(storage: storage, excluding: codeRanges + matchRanges(regex: Self.excludedLinkRegex, in: storage.string))
 
             storage.endEditing()
             textView.typingAttributes = [
@@ -421,7 +443,7 @@ struct NoteTextView: NSViewRepresentable {
         }
 
         private func applyCompletedInline(
-            pattern: String,
+            regex: NSRegularExpression,
             font: NSFont,
             background: NSColor?,
             storage: NSTextStorage,
@@ -431,7 +453,6 @@ struct NoteTextView: NSViewRepresentable {
             excluding excludedRanges: [NSRange] = []
         ) {
             let full = NSRange(location: 0, length: storage.length)
-            guard let regex = try? NSRegularExpression(pattern: pattern) else { return }
             regex.enumerateMatches(in: storage.string, options: [], range: full) { match, _, _ in
                 guard let match, match.numberOfRanges >= 2,
                       !excludedRanges.contains(where: { NSIntersectionRange($0, match.range).length > 0 }),
@@ -459,8 +480,7 @@ struct NoteTextView: NSViewRepresentable {
             }
         }
 
-        private func matchRanges(pattern: String, in string: String) -> [NSRange] {
-            guard let regex = try? NSRegularExpression(pattern: pattern) else { return [] }
+        private func matchRanges(regex: NSRegularExpression, in string: String) -> [NSRange] {
             let full = NSRange(location: 0, length: (string as NSString).length)
             return regex.matches(in: string, options: [], range: full).map(\.range)
         }
@@ -468,49 +488,43 @@ struct NoteTextView: NSViewRepresentable {
         private func applyBlockStyles(storage: NSTextStorage, activeLine: NSRange) {
             let full = NSRange(location: 0, length: storage.length)
 
-            if let quoteRegex = try? NSRegularExpression(pattern: #"^( {0,3}>[\t ]?)(.+)$"#, options: .anchorsMatchLines) {
-                quoteRegex.enumerateMatches(in: storage.string, options: [], range: full) { match, _, _ in
-                    guard let match, match.numberOfRanges >= 3,
-                          NSIntersectionRange(match.range, activeLine).length == 0
-                    else { return }
-                    let marker = match.range(at: 1)
-                    let content = match.range(at: 2)
-                    let paragraph = NSMutableParagraphStyle()
-                    paragraph.headIndent = 18
-                    paragraph.firstLineHeadIndent = 18
-                    paragraph.paragraphSpacing = 4
-                    storage.addAttribute(.paragraphStyle, value: paragraph, range: match.range)
+            Self.quoteRegex.enumerateMatches(in: storage.string, options: [], range: full) { match, _, _ in
+                guard let match, match.numberOfRanges >= 3,
+                      NSIntersectionRange(match.range, activeLine).length == 0
+                else { return }
+                let marker = match.range(at: 1)
+                let content = match.range(at: 2)
+                let paragraph = NSMutableParagraphStyle()
+                paragraph.headIndent = 18
+                paragraph.firstLineHeadIndent = 18
+                paragraph.paragraphSpacing = 4
+                storage.addAttribute(.paragraphStyle, value: paragraph, range: match.range)
+                storage.addAttribute(.foregroundColor, value: QuivPalette.nsMuted, range: content)
+                storage.addAttribute(.font, value: quivBodyFont().withItalicTrait, range: content)
+                hideMarker(marker, in: storage)
+            }
+
+            Self.listRegex.enumerateMatches(in: storage.string, options: [], range: full) { match, _, _ in
+                guard let match, match.numberOfRanges >= 6 else { return }
+                let marker = match.range(at: 2)
+                let content = match.range(at: 5)
+                let paragraph = NSMutableParagraphStyle()
+                paragraph.headIndent = 24
+                paragraph.firstLineHeadIndent = 4
+                paragraph.paragraphSpacing = 2
+                storage.addAttribute(.paragraphStyle, value: paragraph, range: match.range)
+                storage.addAttribute(.foregroundColor, value: QuivPalette.nsAccent, range: marker)
+                storage.addAttribute(.font, value: quivBodyFont(weight: .semibold), range: marker)
+                if match.range(at: 4).location != NSNotFound,
+                   ["x", "X"].contains((storage.string as NSString).substring(with: match.range(at: 4))) {
+                    storage.addAttribute(.strikethroughStyle, value: NSUnderlineStyle.single.rawValue, range: content)
                     storage.addAttribute(.foregroundColor, value: QuivPalette.nsMuted, range: content)
-                    storage.addAttribute(.font, value: quivBodyFont().withItalicTrait, range: content)
-                    hideMarker(marker, in: storage)
                 }
             }
 
-            if let listRegex = try? NSRegularExpression(pattern: #"^( {0,3})((?:[-+*])|(?:\d+[.)]))([\t ]+)(?:\[([ xX])\][\t ]+)?(.+)$"#, options: .anchorsMatchLines) {
-                listRegex.enumerateMatches(in: storage.string, options: [], range: full) { match, _, _ in
-                    guard let match, match.numberOfRanges >= 6 else { return }
-                    let marker = match.range(at: 2)
-                    let content = match.range(at: 5)
-                    let paragraph = NSMutableParagraphStyle()
-                    paragraph.headIndent = 24
-                    paragraph.firstLineHeadIndent = 4
-                    paragraph.paragraphSpacing = 2
-                    storage.addAttribute(.paragraphStyle, value: paragraph, range: match.range)
-                    storage.addAttribute(.foregroundColor, value: QuivPalette.nsAccent, range: marker)
-                    storage.addAttribute(.font, value: quivBodyFont(weight: .semibold), range: marker)
-                    if match.range(at: 4).location != NSNotFound,
-                       ["x", "X"].contains((storage.string as NSString).substring(with: match.range(at: 4))) {
-                        storage.addAttribute(.strikethroughStyle, value: NSUnderlineStyle.single.rawValue, range: content)
-                        storage.addAttribute(.foregroundColor, value: QuivPalette.nsMuted, range: content)
-                    }
-                }
-            }
-
-            if let ruleRegex = try? NSRegularExpression(pattern: #"^( {0,3})(?:(?:\*[\t ]*){3,}|(?:-[\t ]*){3,}|(?:_[\t ]*){3,})$"#, options: .anchorsMatchLines) {
-                ruleRegex.enumerateMatches(in: storage.string, options: [], range: full) { match, _, _ in
-                    guard let match else { return }
-                    storage.addAttribute(.foregroundColor, value: QuivPalette.nsAccent.withAlphaComponent(0.55), range: match.range)
-                }
+            Self.ruleRegex.enumerateMatches(in: storage.string, options: [], range: full) { match, _, _ in
+                guard let match else { return }
+                storage.addAttribute(.foregroundColor, value: QuivPalette.nsAccent.withAlphaComponent(0.55), range: match.range)
             }
 
             applyFencedCodeStyles(storage: storage)
@@ -545,10 +559,8 @@ struct NoteTextView: NSViewRepresentable {
         }
 
         private func applyImages(storage: NSTextStorage, selection: NSRange, excluding excludedRanges: [NSRange]) {
-            let pattern = #"(?<!\\)!\[([^\]\n]*)\]\(([^\)\n]+)\)"#
             let full = NSRange(location: 0, length: storage.length)
-            guard let regex = try? NSRegularExpression(pattern: pattern) else { return }
-            regex.enumerateMatches(in: storage.string, options: [], range: full) { match, _, _ in
+            Self.imageRegex.enumerateMatches(in: storage.string, options: [], range: full) { match, _, _ in
                 guard let match, match.numberOfRanges >= 3,
                       !excludedRanges.contains(where: { NSIntersectionRange($0, match.range).length > 0 }),
                       !isInsideFencedCode(at: match.range.location, source: storage.string as NSString)
@@ -584,10 +596,8 @@ struct NoteTextView: NSViewRepresentable {
         }
 
         private func applyAutolinks(storage: NSTextStorage, selection: NSRange, excluding excludedRanges: [NSRange]) {
-            let pattern = #"<((?:https?://|mailto:)[^>\n]+)>"#
             let full = NSRange(location: 0, length: storage.length)
-            guard let regex = try? NSRegularExpression(pattern: pattern, options: .caseInsensitive) else { return }
-            regex.enumerateMatches(in: storage.string, options: [], range: full) { match, _, _ in
+            Self.autolinkRegex.enumerateMatches(in: storage.string, options: [], range: full) { match, _, _ in
                 guard let match, match.numberOfRanges >= 2,
                       !excludedRanges.contains(where: { NSIntersectionRange($0, match.range).length > 0 }),
                       !isInsideFencedCode(at: match.range.location, source: storage.string as NSString)
@@ -611,10 +621,8 @@ struct NoteTextView: NSViewRepresentable {
         }
 
         private func applyLinks(storage: NSTextStorage, selection: NSRange, excluding excludedRanges: [NSRange]) {
-            let pattern = #"(?<![\\!])\[([^\]\n]+)\]\(([^\)\n]+)\)"#
             let full = NSRange(location: 0, length: storage.length)
-            guard let regex = try? NSRegularExpression(pattern: pattern) else { return }
-            regex.enumerateMatches(in: storage.string, options: [], range: full) { match, _, _ in
+            Self.linkRegex.enumerateMatches(in: storage.string, options: [], range: full) { match, _, _ in
                 guard let match, match.numberOfRanges >= 3,
                       !excludedRanges.contains(where: { NSIntersectionRange($0, match.range).length > 0 }),
                       !isInsideFencedCode(at: match.range.location, source: storage.string as NSString)
