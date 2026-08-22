@@ -747,9 +747,31 @@ final class Workspace {
     }
 
     private func loadState() {
-        guard let data = try? Data(contentsOf: stateURL),
-              let payload = try? JSONDecoder().decode(PersistedWorkspace.self, from: data)
-        else { return }
+        let data: Data
+        do {
+            data = try Data(contentsOf: stateURL)
+        } catch CocoaError.fileNoSuchFile {
+            // A missing workspace is normal on first launch.
+            return
+        } catch {
+            storageError = "Workspace state couldn't be read: \(error.localizedDescription)"
+            return
+        }
+
+        let payload: PersistedWorkspace
+        do {
+            payload = try JSONDecoder().decode(PersistedWorkspace.self, from: data)
+        } catch {
+            let backupMessage: String
+            do {
+                let backup = try backupCorruptFile(at: stateURL)
+                backupMessage = " A copy was saved as \(backup.lastPathComponent)."
+            } catch let backupError {
+                backupMessage = " The corrupt workspace could not be backed up: \(backupError.localizedDescription)."
+            }
+            storageError = "Workspace state couldn't be decoded: \(error.localizedDescription).\(backupMessage)"
+            return
+        }
 
         // Skip legacy schema that used filePath / untitledCounter without libraryID field shape
         if payload.tabs.isEmpty { return }
@@ -772,6 +794,24 @@ final class Workspace {
         } else {
             selectedID = tabs.first?.id
         }
+    }
+
+    private func backupCorruptFile(at url: URL) throws -> URL {
+        let fileManager = FileManager.default
+        let directory = url.deletingLastPathComponent()
+        let timestamp = Int(Date().timeIntervalSince1970)
+        var destination = directory.appendingPathComponent(
+            "\(url.lastPathComponent).corrupt-\(timestamp)"
+        )
+        var suffix = 1
+        while fileManager.fileExists(atPath: destination.path) {
+            destination = directory.appendingPathComponent(
+                "\(url.lastPathComponent).corrupt-\(timestamp)-\(suffix)"
+            )
+            suffix += 1
+        }
+        try fileManager.copyItem(at: url, to: destination)
+        return destination
     }
 
     private func migrateLegacyIfNeeded() {

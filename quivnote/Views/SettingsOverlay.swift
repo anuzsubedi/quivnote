@@ -299,8 +299,7 @@ struct SettingsOverlay: View {
                             keyCode: editorSettings.hotKeyCode,
                             modifiers: editorSettings.hotKeyModifiers,
                             onChange: { code, modifiers in
-                                editorSettings.hotKeyCode = code
-                                editorSettings.hotKeyModifiers = modifiers
+                                HotKeyManager.updateHotKey(keyCode: code, modifiers: modifiers)
                             }
                         )
                         .frame(width: 190)
