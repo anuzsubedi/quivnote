@@ -171,7 +171,7 @@ private struct ShortcutRow: View {
         HStack(spacing: 8) {
             HStack(spacing: 3) {
                 ForEach(Array(keys.enumerated()), id: \.offset) { _, key in
-                    KeyCap(key, compact: false)
+                    KeyCap(key)
                 }
             }
             .frame(width: 96, alignment: .leading)
@@ -188,19 +188,17 @@ private struct ShortcutRow: View {
 
 private struct KeyCap: View {
     var label: String
-    var compact: Bool
 
-    init(_ label: String, compact: Bool) {
+    init(_ label: String) {
         self.label = label
-        self.compact = compact
     }
 
     var body: some View {
         Text(label)
-            .font(.system(size: compact ? 10 : 11, weight: .medium, design: .monospaced))
+            .font(.system(size: 11, weight: .medium, design: .monospaced))
             .foregroundStyle(QuivPalette.ink.opacity(0.8))
-            .padding(.horizontal, compact ? 5 : 6)
-            .padding(.vertical, compact ? 3 : 4)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 4)
             .background {
                 RoundedRectangle(cornerRadius: 4, style: .continuous)
                     .fill(QuivPalette.ink.opacity(0.06))

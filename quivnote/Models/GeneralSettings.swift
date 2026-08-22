@@ -83,15 +83,6 @@ final class GeneralSettings {
         return flags
     }
 
-    var hotKeyDisplayString: String {
-        var symbols = ""
-        if hotKeyModifiers & UInt32(controlKey) != 0 { symbols += "⌃" }
-        if hotKeyModifiers & UInt32(optionKey) != 0 { symbols += "⌥" }
-        if hotKeyModifiers & UInt32(shiftKey) != 0 { symbols += "⇧" }
-        if hotKeyModifiers & UInt32(cmdKey) != 0 { symbols += "⌘" }
-        return symbols + Self.keyGlyph(forCode: hotKeyCode)
-    }
-
     /// Human-readable glyph for a virtual keycode (letters, digits, punctuation).
     static func keyGlyph(forCode code: UInt32) -> String {
         let event = CGEvent(keyboardEventSource: nil, virtualKey: CGKeyCode(code), keyDown: true)
