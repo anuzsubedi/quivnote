@@ -292,8 +292,6 @@ struct NoteTextView: NSViewRepresentable {
             storage.beginEditing()
             resetAttributes(storage)
 
-            let ns = storage.string as NSString
-
             // Headings — accent color, bolder
             let headingPattern = #"^(#{1,6})\s+(.+)$"#
             if let headingRegex = try? NSRegularExpression(pattern: headingPattern, options: .anchorsMatchLines) {
@@ -335,7 +333,6 @@ struct NoteTextView: NSViewRepresentable {
                     for marker in markers where marker.length > 0 {
                         storage.addAttribute(.foregroundColor, value: QuivPalette.nsMuted.withAlphaComponent(0.45), range: marker)
                     }
-                    _ = ns
                 }
             }
 
@@ -400,7 +397,7 @@ struct NoteTextView: NSViewRepresentable {
                 }
             }
 
-            applyBlockStyles(storage: storage, selection: selection, activeLine: activeLine)
+            applyBlockStyles(storage: storage, activeLine: activeLine)
 
             let codePattern = #"(?<!\\)`([^`\n]+)`"#
             let codeRanges = matchRanges(pattern: codePattern, in: storage.string)
@@ -430,7 +427,6 @@ struct NoteTextView: NSViewRepresentable {
             storage: NSTextStorage,
             selection: NSRange,
             strikethrough: Bool = false,
-            foreground: NSColor? = nil,
             underline: Bool = false,
             excluding excludedRanges: [NSRange] = []
         ) {
@@ -445,7 +441,6 @@ struct NoteTextView: NSViewRepresentable {
                 storage.addAttribute(.font, value: font, range: inner)
                 if let background { storage.addAttribute(.backgroundColor, value: background, range: inner) }
                 if strikethrough { storage.addAttribute(.strikethroughStyle, value: NSUnderlineStyle.single.rawValue, range: inner) }
-                if let foreground { storage.addAttribute(.foregroundColor, value: foreground, range: inner) }
                 if underline { storage.addAttribute(.underlineStyle, value: NSUnderlineStyle.single.rawValue, range: inner) }
 
                 // Keep syntax visible while the caret is inside the construct; a just-typed
@@ -470,7 +465,7 @@ struct NoteTextView: NSViewRepresentable {
             return regex.matches(in: string, options: [], range: full).map(\.range)
         }
 
-        private func applyBlockStyles(storage: NSTextStorage, selection: NSRange, activeLine: NSRange) {
+        private func applyBlockStyles(storage: NSTextStorage, activeLine: NSRange) {
             let full = NSRange(location: 0, length: storage.length)
 
             if let quoteRegex = try? NSRegularExpression(pattern: #"^( {0,3}>[\t ]?)(.+)$"#, options: .anchorsMatchLines) {
@@ -519,7 +514,6 @@ struct NoteTextView: NSViewRepresentable {
             }
 
             applyFencedCodeStyles(storage: storage)
-            _ = selection
         }
 
         private func applyFencedCodeStyles(storage: NSTextStorage) {
