@@ -39,8 +39,15 @@ final class NoteLibrary {
             notes = []
             return
         } catch {
+            let backupMessage: String
+            do {
+                let backup = try quarantineCorruptFile(at: indexURL)
+                backupMessage = " A copy was saved as \(backup.lastPathComponent)."
+            } catch let backupError {
+                backupMessage = " The corrupt index could not be backed up: \(backupError.localizedDescription)."
+            }
             notes = []
-            lastError = "Couldn't decode note library index: \(error.localizedDescription)"
+            lastError = "Couldn't decode note library index: \(error.localizedDescription).\(backupMessage)"
             return
         }
 
@@ -305,6 +312,24 @@ final class NoteLibrary {
         let fileManager = FileManager.default
         guard fileManager.fileExists(atPath: url.path) else { return }
         try? fileManager.removeItem(at: url)
+    }
+
+    private func quarantineCorruptFile(at url: URL) throws -> URL {
+        let fileManager = FileManager.default
+        let directory = url.deletingLastPathComponent()
+        let timestamp = Int(Date().timeIntervalSince1970)
+        var destination = directory.appendingPathComponent(
+            "\(url.lastPathComponent).corrupt-\(timestamp)"
+        )
+        var suffix = 1
+        while fileManager.fileExists(atPath: destination.path) {
+            destination = directory.appendingPathComponent(
+                "\(url.lastPathComponent).corrupt-\(timestamp)-\(suffix)"
+            )
+            suffix += 1
+        }
+        try fileManager.copyItem(at: url, to: destination)
+        return destination
     }
 }
 
