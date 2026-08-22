@@ -474,15 +474,29 @@ struct NoteEditorView: View {
                     .focused($focusedSearchField, equals: .find)
                     .accessibilityLabel("Find in note")
                     .onSubmit { workspace.findNext(forward: true) }
+                    .onKeyPress(.return, phases: .down) { keyPress in
+                        guard keyPress.modifiers.contains(.shift) else { return .ignored }
+                        workspace.findNext(forward: false)
+                        return .handled
+                    }
 
                 findButton("Next", icon: "chevron.down") { workspace.findNext(forward: true) }
                 findButton("Prev", icon: "chevron.up") { workspace.findNext(forward: false) }
 
-                if !workspace.findStatus.isEmpty {
+                ZStack(alignment: .leading) {
+                    Text("00 of 00")
+                        .font(.system(size: 10, weight: .medium, design: .monospaced))
+                        .hidden()
+
                     Text(workspace.findStatus)
                         .font(.system(size: 10, weight: .medium, design: .monospaced))
                         .foregroundStyle(QuivPalette.muted.opacity(0.7))
+                        .opacity(workspace.findStatus.isEmpty ? 0 : 1)
                 }
+                .frame(width: 72, alignment: .leading)
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel("Find results")
+                .accessibilityValue(workspace.findStatus.isEmpty ? "No result" : workspace.findStatus)
 
                 Spacer()
 
@@ -542,6 +556,17 @@ struct NoteEditorView: View {
             .background(QuivPalette.ink.opacity(0.05), in: RoundedRectangle(cornerRadius: 5))
         }
         .buttonStyle(.plain)
+    }
+
+    private func selectAllFindTextWhenFocused() {
+        DispatchQueue.main.async {
+            guard let window = NSApp.keyWindow else { return }
+            if let fieldEditor = window.firstResponder as? NSTextView, fieldEditor.isFieldEditor {
+                fieldEditor.selectAll(nil)
+            } else if let textField = window.firstResponder as? NSTextField {
+                textField.selectText(nil)
+            }
+        }
     }
 
     // MARK: - Unsaved Close Bar
@@ -759,18 +784,15 @@ struct NoteEditorView: View {
                     .clipped()
 
                     if tab.text.isEmpty {
-                        VStack(alignment: .leading, spacing: 5) {
-                            Text("Start writing…")
-                                .font(.system(size: 15.5))
-                                .foregroundStyle(QuivPalette.muted.opacity(0.52))
-                            Text(tab.editorMode == .wysiwyg
-                                 ? "Formatting appears as you complete Markdown  ·  ⌘/ for commands"
-                                 : "Markdown source  ·  ⌘/ for commands")
-                                .font(.system(size: 10.5, weight: .medium))
-                                .foregroundStyle(QuivPalette.muted.opacity(0.46))
+                        VStack(spacing: 5) {
+                            Text("Untitled")
+                                .font(.system(size: 15.5, weight: .medium))
+                                .foregroundStyle(QuivPalette.ink.opacity(0.30))
+                            Text("Start typing…")
+                                .font(.system(size: 12))
+                                .foregroundStyle(QuivPalette.muted.opacity(0.42))
                         }
-                        .padding(.leading, tab.showLineNumbers ? 46 : 26)
-                        .padding(.top, 22)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
                         .allowsHitTesting(false)
                         .accessibilityHidden(true)
                     }
