@@ -30,15 +30,23 @@ final class NoteLibrary {
     }
 
     func reload() {
-        let decoded: [LibraryNote]
+        let data: Data
         do {
-            let data = try Data(contentsOf: indexURL)
-            decoded = try JSONDecoder().decode([LibraryNote].self, from: data)
+            data = try Data(contentsOf: indexURL)
         } catch CocoaError.fileNoSuchFile {
             // Missing index file on first launch is normal; start empty.
             notes = []
             lastError = nil
             return
+        } catch {
+            notes = []
+            lastError = "Couldn't read note library index: \(error.localizedDescription)"
+            return
+        }
+
+        let decoded: [LibraryNote]
+        do {
+            decoded = try JSONDecoder().decode([LibraryNote].self, from: data)
         } catch {
             let backupMessage: String
             do {
