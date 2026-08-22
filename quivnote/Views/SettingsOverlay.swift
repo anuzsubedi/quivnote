@@ -241,6 +241,7 @@ struct SettingsOverlay: View {
                         for tab in workspace.tabs {
                             tab.showLineNumbers = newValue
                         }
+                        workspace.persist()
                     }
                 }
 
