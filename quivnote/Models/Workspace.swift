@@ -268,6 +268,7 @@ final class Workspace {
         settingsVisible = false
         findVisible = false
         library.reload()
+        storageError = library.lastError
         libraryQuery = ""
         libraryRenamingID = nil
         pendingLibraryDeleteID = nil

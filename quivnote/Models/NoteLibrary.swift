@@ -37,6 +37,7 @@ final class NoteLibrary {
         } catch CocoaError.fileNoSuchFile {
             // Missing index file on first launch is normal; start empty.
             notes = []
+            lastError = nil
             return
         } catch {
             let backupMessage: String
@@ -67,6 +68,7 @@ final class NoteLibrary {
             lastError = "Couldn't read note library bodies: \(error.localizedDescription)"
             return
         }
+        lastError = nil
     }
 
     func note(id: UUID) -> LibraryNote? {
