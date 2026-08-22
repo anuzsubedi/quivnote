@@ -589,6 +589,7 @@ struct HotKeyRecorder: View {
     }
 }
 
+#if DEBUG
 #Preview {
     ZStack {
         QuivPalette.base
@@ -596,3 +597,4 @@ struct HotKeyRecorder: View {
     }
     .frame(width: 680, height: 520)
 }
+#endif

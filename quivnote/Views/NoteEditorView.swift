@@ -832,7 +832,9 @@ private extension Theme {
         }
 }
 
+#if DEBUG
 #Preview {
     NoteEditorView(workspace: Workspace(), focus: PanelFocus())
         .frame(width: 720, height: 520)
 }
+#endif
