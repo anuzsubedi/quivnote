@@ -6,6 +6,7 @@
 import AppKit
 import Carbon.HIToolbox
 import CoreGraphics
+import ServiceManagement
 import Observation
 
 @Observable
@@ -38,6 +39,19 @@ final class GeneralSettings {
     }
 
     // MARK: - Window behavior
+
+    var launchAtLogin: Bool {
+        didSet {
+            guard launchAtLogin != oldValue else { return }
+            save()
+            if launchAtLogin {
+                try? SMAppService.mainApp.register()
+            } else {
+                try? SMAppService.mainApp.unregister()
+            }
+            NotificationCenter.default.post(name: .quivGeneralSettingsChanged, object: nil)
+        }
+    }
 
     var hideWhenClickingOutside: Bool {
         didSet {
@@ -112,6 +126,7 @@ final class GeneralSettings {
         defaultLineNumbers = defaults.bool(forKey: "quiv.editor.lineNumbers")
         let storedSize = defaults.double(forKey: "quiv.editor.fontSize")
         editorFontSize = storedSize == 0 ? 15.5 : storedSize
+        launchAtLogin = SMAppService.mainApp.status == .enabled
         hideWhenClickingOutside = defaults.bool(forKey: "quiv.window.hideOnOutsideClick")
 
         hotKeyEnabled = defaults.object(forKey: "quiv.hotkey.enabled") as? Bool ?? true

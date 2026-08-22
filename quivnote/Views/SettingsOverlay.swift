@@ -156,6 +156,8 @@ struct SettingsOverlay: View {
         .buttonStyle(.plain)
         .accessibilityLabel("\(item.label) settings")
         .accessibilityValue(selected ? "Selected" : "")
+        .accessibilityAddTraits(.isButton)
+        .accessibilityAddTraits(selected ? .isSelected : [])
     }
 
     // MARK: - Content
@@ -273,6 +275,19 @@ struct SettingsOverlay: View {
     private var generalSection: some View {
         VStack(alignment: .leading, spacing: 16) {
             sectionLabel("WINDOW")
+            group {
+                row(
+                    title: "Launch at login",
+                    subtitle: "Start quivnote automatically when you log in",
+                    showsDivider: false
+                ) {
+                    quivToggle(editorSettings.launchAtLogin) {
+                        editorSettings.launchAtLogin.toggle()
+                    }
+                }
+            }
+
+            sectionLabel("BEHAVIOR")
             group {
                 row(
                     title: "Hide when clicking outside",
@@ -452,8 +467,11 @@ struct SettingsOverlay: View {
         .buttonStyle(.plain)
         .frame(minWidth: 44, minHeight: 26)
         .contentShape(Rectangle())
-        .accessibilityLabel(isOn ? "On" : "Off")
-        .accessibilityAddTraits(.isButton)
+        .accessibilityLabel("Toggle")
+        .accessibilityValue(isOn ? "On" : "Off")
+        .accessibilityAddTraits(.isToggle)
+        .focusable()
+        .focusEffectDisabled(false)
     }
 
     private func accentSwatch(_ choice: AppearanceSettings.AccentChoice) -> some View {
