@@ -721,6 +721,7 @@ final class Workspace {
         do {
             let data = try JSONEncoder().encode(payload)
             try data.write(to: stateURL, options: .atomic)
+            storageError = nil
         } catch {
             storageError = "Workspace state not saved: \(error.localizedDescription)"
         }
