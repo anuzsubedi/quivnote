@@ -90,7 +90,14 @@ struct NoteEditorView: View {
             NotificationCenter.default.post(name: .quivFocusEditor, object: nil)
         }
         .onChange(of: workspace.findVisible) { _, visible in
-            focusedSearchField = visible ? .find : nil
+            if visible {
+                if workspace.selectedTab?.editorMode == .preview {
+                    workspace.setEditorMode(.wysiwyg)
+                }
+                focusedSearchField = .find
+            } else {
+                focusedSearchField = nil
+            }
         }
     }
 
