@@ -66,28 +66,36 @@ struct NoteEditorView: View {
                 SettingsOverlay(workspace: workspace)
                     .transition(.opacity.combined(with: .scale(scale: 0.97)))
             }
+
+            if workspace.launchAtLoginPromptVisible {
+                LaunchAtLoginPromptOverlay(
+                    onYes: {
+                        GeneralSettings.shared.launchAtLogin = true
+                        LaunchAtLoginPrompt.record(answer: .yes)
+                        workspace.hideLaunchAtLoginPrompt()
+                    },
+                    onLater: {
+                        LaunchAtLoginPrompt.record(answer: .later)
+                        workspace.hideLaunchAtLoginPrompt()
+                    },
+                    onNever: {
+                        LaunchAtLoginPrompt.record(answer: .never)
+                        workspace.hideLaunchAtLoginPrompt()
+                    }
+                )
+            }
         }
         .tint(currentAccent.color)
         .animation(reduceMotion ? nil : .easeOut(duration: 0.2), value: workspace.shortcutsVisible)
         .animation(reduceMotion ? nil : .easeOut(duration: 0.2), value: workspace.libraryVisible)
         .animation(reduceMotion ? nil : .easeOut(duration: 0.2), value: workspace.settingsVisible)
+        .animation(reduceMotion ? nil : .easeOut(duration: 0.2), value: workspace.launchAtLoginPromptVisible)
         .animation(reduceMotion ? nil : .easeOut(duration: 0.18), value: workspace.pendingCloseTabID)
         .frame(minWidth: 520, minHeight: 360)
         .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
         .overlay {
             RoundedRectangle(cornerRadius: 14, style: .continuous)
-                .strokeBorder(
-                    LinearGradient(
-                        colors: [
-                            QuivPalette.ink.opacity(0.10),
-                            QuivPalette.accent.opacity(0.08),
-                            QuivPalette.ink.opacity(0.05),
-                        ],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    ),
-                    lineWidth: 0.5
-                )
+                .strokeBorder(QuivPalette.ink.opacity(0.10), lineWidth: 0.5)
         }
         .onChange(of: focus.generation) { _, _ in
             NotificationCenter.default.post(name: .quivFocusEditor, object: nil)
@@ -98,6 +106,7 @@ struct NoteEditorView: View {
                     workspace.setEditorMode(.wysiwyg)
                 }
                 focusedSearchField = .find
+                selectAllFindTextWhenFocused()
             } else {
                 focusedSearchField = nil
             }
@@ -187,7 +196,10 @@ struct NoteEditorView: View {
     // MARK: - Chrome Header
 
     private var chromeHeader: some View {
-        HStack(spacing: 8) {
+        let isDirty = workspace.selectedTab?.isDirty ?? false
+        let saveFlash = workspace.saveFlash
+
+        return HStack(spacing: 8) {
             // App wordmark
             HStack(spacing: 5) {
                 ZStack {
@@ -206,9 +218,18 @@ struct NoteEditorView: View {
 
             Spacer()
 
-            if let tab = workspace.selectedTab, tab.isDirty || workspace.saveFlash {
-                statusBadge(tab)
+            ZStack(alignment: .trailing) {
+                Color.clear
+                    .frame(width: 64, height: 22)
+                    .accessibilityHidden(true)
+
+                if let tab = workspace.selectedTab, isDirty || saveFlash {
+                    statusBadge(tab)
+                        .transition(.opacity)
+                }
             }
+            .animation(reduceMotion ? nil : .easeOut(duration: 0.18), value: isDirty)
+            .animation(reduceMotion ? nil : .easeOut(duration: 0.18), value: saveFlash)
 
             if let storageError = workspace.storageError {
                 storageErrorBadge(storageError)
@@ -383,6 +404,30 @@ struct NoteEditorView: View {
             .padding(.horizontal, 10)
             .padding(.vertical, 6)
         }
+        .mask {
+            HStack(spacing: 0) {
+                LinearGradient(
+                    colors: [QuivPalette.ink.opacity(0), QuivPalette.ink],
+                    startPoint: .leading,
+                    endPoint: .trailing
+                )
+                .frame(width: 16)
+                .frame(maxHeight: .infinity)
+
+                Rectangle()
+                    .fill(QuivPalette.ink)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+                LinearGradient(
+                    colors: [QuivPalette.ink, QuivPalette.ink.opacity(0)],
+                    startPoint: .leading,
+                    endPoint: .trailing
+                )
+                .frame(width: 16)
+                .frame(maxHeight: .infinity)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
         .background(QuivPalette.chrome.opacity(0.32))
     }
 
@@ -424,6 +469,11 @@ struct NoteEditorView: View {
                 .padding(.trailing, 3)
             }
         }
+        .background {
+            TabMiddleClickHandler {
+                workspace.closeTab(id: tab.id)
+            }
+        }
         .background(
             RoundedRectangle(cornerRadius: 7, style: .continuous)
                 .fill(
@@ -442,7 +492,8 @@ struct NoteEditorView: View {
         .onHover { isHovered in
             hoveredTabID = isHovered ? tab.id : nil
         }
-        .help(tab.displayTitle)
+        .help("\(tab.displayTitle) (middle-click to close)")
+        .accessibilityHint("Middle-click to close this tab")
         .accessibilityElement(children: .contain)
     }
 
@@ -468,15 +519,29 @@ struct NoteEditorView: View {
                     .focused($focusedSearchField, equals: .find)
                     .accessibilityLabel("Find in note")
                     .onSubmit { workspace.findNext(forward: true) }
+                    .onKeyPress(.return, phases: .down) { keyPress in
+                        guard keyPress.modifiers.contains(.shift) else { return .ignored }
+                        workspace.findNext(forward: false)
+                        return .handled
+                    }
 
                 findButton("Next", icon: "chevron.down") { workspace.findNext(forward: true) }
                 findButton("Prev", icon: "chevron.up") { workspace.findNext(forward: false) }
 
-                if !workspace.findStatus.isEmpty {
+                ZStack(alignment: .leading) {
+                    Text("00 of 00")
+                        .font(.system(size: 10, weight: .medium, design: .monospaced))
+                        .hidden()
+
                     Text(workspace.findStatus)
                         .font(.system(size: 10, weight: .medium, design: .monospaced))
                         .foregroundStyle(QuivPalette.muted.opacity(0.7))
+                        .opacity(workspace.findStatus.isEmpty ? 0 : 1)
                 }
+                .frame(width: 72, alignment: .leading)
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel("Find results")
+                .accessibilityValue(workspace.findStatus.isEmpty ? "No result" : workspace.findStatus)
 
                 Spacer()
 
@@ -536,6 +601,17 @@ struct NoteEditorView: View {
             .background(QuivPalette.ink.opacity(0.05), in: RoundedRectangle(cornerRadius: 5))
         }
         .buttonStyle(.plain)
+    }
+
+    private func selectAllFindTextWhenFocused() {
+        DispatchQueue.main.async {
+            guard let window = NSApp.keyWindow else { return }
+            if let fieldEditor = window.firstResponder as? NSTextView, fieldEditor.isFieldEditor {
+                fieldEditor.selectAll(nil)
+            } else if let textField = window.firstResponder as? NSTextField {
+                textField.selectText(nil)
+            }
+        }
     }
 
     // MARK: - Unsaved Close Bar
@@ -753,18 +829,15 @@ struct NoteEditorView: View {
                     .clipped()
 
                     if tab.text.isEmpty {
-                        VStack(alignment: .leading, spacing: 5) {
-                            Text("Start writing…")
-                                .font(.system(size: 15.5))
-                                .foregroundStyle(QuivPalette.muted.opacity(0.52))
-                            Text(tab.editorMode == .wysiwyg
-                                 ? "Formatting appears as you complete Markdown  ·  ⌘/ for commands"
-                                 : "Markdown source  ·  ⌘/ for commands")
-                                .font(.system(size: 10.5, weight: .medium))
-                                .foregroundStyle(QuivPalette.muted.opacity(0.46))
+                        VStack(spacing: 5) {
+                            Text("Untitled")
+                                .font(.system(size: 15.5, weight: .medium))
+                                .foregroundStyle(QuivPalette.ink.opacity(0.30))
+                            Text("Start typing…")
+                                .font(.system(size: 12))
+                                .foregroundStyle(QuivPalette.muted.opacity(0.42))
                         }
-                        .padding(.leading, tab.showLineNumbers ? 46 : 26)
-                        .padding(.top, 22)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
                         .allowsHitTesting(false)
                         .accessibilityHidden(true)
                     }
@@ -781,6 +854,73 @@ struct NoteEditorView: View {
             with: "",
             options: .regularExpression
         )
+    }
+}
+
+private struct TabMiddleClickHandler: NSViewRepresentable {
+    let action: () -> Void
+
+    func makeNSView(context: Context) -> MonitorView {
+        let view = MonitorView()
+        view.action = action
+        return view
+    }
+
+    func updateNSView(_ view: MonitorView, context: Context) {
+        view.action = action
+    }
+
+    final class MonitorView: NSView {
+        var action: (() -> Void)?
+        private var eventMonitor: Any?
+
+        override func hitTest(_ point: NSPoint) -> NSView? {
+            nil
+        }
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            if window == nil {
+                removeEventMonitor()
+            } else {
+                installEventMonitor()
+            }
+        }
+
+        override func viewWillMove(toWindow newWindow: NSWindow?) {
+            if newWindow == nil {
+                removeEventMonitor()
+            }
+            super.viewWillMove(toWindow: newWindow)
+        }
+
+        deinit {
+            removeEventMonitor()
+        }
+
+        private func installEventMonitor() {
+            guard eventMonitor == nil else { return }
+            eventMonitor = NSEvent.addLocalMonitorForEvents(matching: .otherMouseDown) { [weak self] event in
+                guard let self,
+                      let window = self.window,
+                      event.window === window,
+                      event.buttonNumber == 2
+                else { return event }
+
+                let location = self.convert(event.locationInWindow, from: nil)
+                guard self.bounds.contains(location) else { return event }
+
+                self.action?()
+                return nil
+            }
+        }
+
+        private func removeEventMonitor() {
+            if let eventMonitor {
+                NSEvent.removeMonitor(eventMonitor)
+                self.eventMonitor = nil
+            }
+        }
     }
 }
 

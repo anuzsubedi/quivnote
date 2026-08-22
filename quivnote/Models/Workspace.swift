@@ -23,6 +23,7 @@ final class Workspace {
     var shortcutsPinned = false
     var libraryVisible = false
     var settingsVisible = false
+    var launchAtLoginPromptVisible = false
     var libraryQuery = ""
     var libraryFocusID: UUID?
     var libraryRenamingID: UUID?
@@ -295,6 +296,19 @@ final class Workspace {
         settingsVisible = true
     }
 
+    // MARK: - Launch-at-login prompt
+
+    /// Shows the prompt if the user hasn't answered it yet (or picked "Not Now" long enough ago).
+    func maybeShowLaunchAtLoginPrompt() {
+        guard LaunchAtLoginPrompt.shouldShow() else { return }
+        dismissAllOverlays()
+        launchAtLoginPromptVisible = true
+    }
+
+    func hideLaunchAtLoginPrompt() {
+        launchAtLoginPromptVisible = false
+    }
+
     private func dismissAllOverlays() {
         findVisible = false
         replaceVisible = false
@@ -302,6 +316,7 @@ final class Workspace {
         shortcutsPinned = false
         libraryVisible = false
         settingsVisible = false
+        launchAtLoginPromptVisible = false
     }
 
     func hideSettings() {

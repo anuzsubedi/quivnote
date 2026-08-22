@@ -46,6 +46,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             panel.toggle()
         }
 
+        // Give the note panel a moment to appear before presenting the prompt.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { [weak self] in
+            MainActor.assumeIsolated {
+                self?.workspace.maybeShowLaunchAtLoginPrompt()
+            }
+        }
+
         NotificationCenter.default.addObserver(
             forName: .quivHotKeyChanged,
             object: nil,
