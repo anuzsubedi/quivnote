@@ -122,9 +122,7 @@ final class NoteLibrary {
 
     func rename(id: UUID, title: String) throws {
         guard var note = note(id: id) else { return }
-        note.title = title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            ? "Untitled"
-            : title.trimmingCharacters(in: .whitespacesAndNewlines)
+        note.title = Self.normalizedTitle(title, body: note.body)
         note.updatedAt = Date()
         let updatedNotes = replacing(note)
         do {
