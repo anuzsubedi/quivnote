@@ -71,6 +71,7 @@ struct NoteTextView: NSViewRepresentable {
 
         let textView = MarkdownTextView(frame: .zero, textContainer: container)
         textView.delegate = context.coordinator
+        textView.wantsLayer = true
         textView.onFormat = { [weak coordinator = context.coordinator] style in
             coordinator?.toggleFormatting(style)
         }
@@ -290,6 +291,7 @@ struct NoteTextView: NSViewRepresentable {
         }
 
         func applyRendering() {
+            (textView as? MarkdownTextView)?.showsTaskCheckboxes = parent.mode == .wysiwyg
             guard parent.mode != .preview else { return }
             if parent.mode == .wysiwyg {
                 applyLivePreview()
@@ -376,6 +378,7 @@ struct NoteTextView: NSViewRepresentable {
                 }
             }
             storage.endEditing()
+            textView.needsDisplay = true
             textView.typingAttributes = [
                 .font: quivBodyFont(),
                 .foregroundColor: QuivPalette.nsInk,
@@ -506,15 +509,25 @@ struct NoteTextView: NSViewRepresentable {
 
             Self.listRegex.enumerateMatches(in: storage.string, options: [], range: full) { match, _, _ in
                 guard let match, match.numberOfRanges >= 6 else { return }
-                let marker = match.range(at: 2)
                 let content = match.range(at: 5)
+                let marker = match.range(at: 2)
                 let paragraph = NSMutableParagraphStyle()
-                paragraph.headIndent = 24
+                paragraph.headIndent = 24 + CGFloat(match.range(at: 1).length)
                 paragraph.firstLineHeadIndent = 4
                 paragraph.paragraphSpacing = 2
                 storage.addAttribute(.paragraphStyle, value: paragraph, range: match.range)
-                storage.addAttribute(.foregroundColor, value: QuivPalette.nsAccent, range: marker)
-                storage.addAttribute(.font, value: quivBodyFont(weight: .semibold), range: marker)
+                if match.range(at: 4).location == NSNotFound {
+                    // Plain bullet: keep the marker visible but subtle.
+                    storage.addAttribute(.foregroundColor, value: QuivPalette.nsAccent.withAlphaComponent(0.85), range: marker)
+                    storage.addAttribute(.font, value: quivBodyFont(weight: .semibold), range: marker)
+                } else {
+                    // Task item: hide the raw "- [ ]" characters entirely.
+                    // A real checkbox is drawn on top by the overlay view.
+                    for r in [marker, NSRange(location: NSMaxRange(marker), length: 1), match.range(at: 3)] {
+                        hideMarker(r, in: storage)
+                    }
+                    hideMarker(NSRange(location: NSMaxRange(match.range(at: 3)) + 1, length: 1), in: storage)
+                }
                 if match.range(at: 4).location != NSNotFound,
                    ["x", "X"].contains((storage.string as NSString).substring(with: match.range(at: 4))) {
                     storage.addAttribute(.strikethroughStyle, value: NSUnderlineStyle.single.rawValue, range: content)
@@ -826,6 +839,111 @@ struct NoteTextView: NSViewRepresentable {
 private final class MarkdownTextView: NSTextView {
     var onFormat: ((MarkdownFormatStyle) -> Void)?
     var onPasteURLOverSelection: (() -> Bool)?
+    var showsTaskCheckboxes = false {
+        didSet { needsDisplay = true }
+    }
+
+    private static let taskItemRegex = try! NSRegularExpression(
+        pattern: #"^( {0,3})([-+*])[\t ]+\[([ xX])\]([\t ]+)"#,
+        options: .anchorsMatchLines
+    )
+
+    private struct TaskCheckbox {
+        let markerRange: NSRange
+        let isChecked: Bool
+        let rect: NSRect
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        super.draw(dirtyRect)
+        guard showsTaskCheckboxes else { return }
+
+        for checkbox in taskCheckboxes() where checkbox.rect.intersects(dirtyRect) {
+            let path = NSBezierPath(roundedRect: checkbox.rect, xRadius: 3, yRadius: 3)
+            path.lineWidth = 1.2
+            if checkbox.isChecked {
+                QuivPalette.nsAccent.setFill()
+                path.fill()
+                drawCheckmark(in: checkbox.rect)
+            } else {
+                QuivPalette.nsRaised.setFill()
+                path.fill()
+                QuivPalette.nsMuted.withAlphaComponent(0.7).setStroke()
+                path.stroke()
+            }
+        }
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        if showsTaskCheckboxes {
+            let point = convert(event.locationInWindow, from: nil)
+            if let checkbox = taskCheckboxes().first(where: {
+                $0.rect.insetBy(dx: -4, dy: -4).contains(point)
+            }) {
+                let replacement = checkbox.isChecked ? " " : "x"
+                let selection = selectedRange()
+                guard shouldChangeText(in: checkbox.markerRange, replacementString: replacement) else { return }
+                replaceCharacters(in: checkbox.markerRange, with: replacement)
+                didChangeText()
+                let length = (string as NSString).length
+                let location = min(selection.location, length)
+                setSelectedRange(NSRange(location: location, length: min(selection.length, length - location)))
+                return
+            }
+        }
+        super.mouseDown(with: event)
+    }
+
+    private func taskCheckboxes() -> [TaskCheckbox] {
+        guard let layoutManager, textContainer != nil else { return [] }
+        let source = string as NSString
+        let fullRange = NSRange(location: 0, length: source.length)
+        var checkboxes: [TaskCheckbox] = []
+
+        Self.taskItemRegex.enumerateMatches(in: string, range: fullRange) { match, _, _ in
+            guard let match, match.numberOfRanges > 3,
+                  !isInsideFencedCode(at: match.range.location, source: source)
+            else { return }
+            let characterRange = match.range
+            let glyphRange = layoutManager.glyphRange(forCharacterRange: characterRange, actualCharacterRange: nil)
+            guard glyphRange.length > 0 else { return }
+            let lineRect = layoutManager.lineFragmentRect(forGlyphAt: glyphRange.location, effectiveRange: nil)
+            let size: CGFloat = 11.5
+            let rect = NSRect(
+                x: textContainerOrigin.x + lineRect.minX + 1,
+                y: textContainerOrigin.y + lineRect.midY - size / 2,
+                width: size,
+                height: size
+            )
+            let markerRange = match.range(at: 3)
+            let marker = source.substring(with: markerRange).lowercased()
+            checkboxes.append(TaskCheckbox(markerRange: markerRange, isChecked: marker == "x", rect: rect))
+        }
+        return checkboxes
+    }
+
+    private func isInsideFencedCode(at location: Int, source: NSString) -> Bool {
+        guard location > 0 else { return false }
+        let prefix = source.substring(with: NSRange(location: 0, length: min(location, source.length)))
+        var inside = false
+        prefix.enumerateLines { line, _ in
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if trimmed.hasPrefix("```") || trimmed.hasPrefix("~~~") { inside.toggle() }
+        }
+        return inside
+    }
+
+    private func drawCheckmark(in rect: NSRect) {
+        let path = NSBezierPath()
+        path.lineWidth = 1.5
+        path.lineCapStyle = .round
+        path.lineJoinStyle = .round
+        path.move(to: NSPoint(x: rect.minX + 2.8, y: rect.midY))
+        path.line(to: NSPoint(x: rect.minX + 4.8, y: rect.minY + 3.1))
+        path.line(to: NSPoint(x: rect.maxX - 2.4, y: rect.maxY - 2.8))
+        NSColor.white.setStroke()
+        path.stroke()
+    }
 
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
         let modifiers = event.modifierFlags.intersection([.command, .control, .option, .shift])
