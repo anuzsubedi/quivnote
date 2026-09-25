@@ -12,6 +12,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var hotKeyManager: HotKeyManager?
     private var shortcutMonitor: ShortcutMonitor?
     private var statusItemController: StatusItemController?
+    private var hotCornerManager: HotCornerManager?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.accessory)
@@ -46,6 +47,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             panel.toggle()
         }
 
+        let hotCorners = HotCornerManager { panel.show() }
+        hotCornerManager = hotCorners
+        hotCorners.startPolling()
+
         // Give the note panel a moment to appear before presenting the prompt.
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { [weak self] in
             MainActor.assumeIsolated {
@@ -69,6 +74,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         shortcutMonitor?.stop()
         hotKeyManager?.tearDown()
         statusItemController?.tearDown()
+        hotCornerManager?.tearDown()
         panelController?.tearDown()
     }
 

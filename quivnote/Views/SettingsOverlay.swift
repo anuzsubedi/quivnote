@@ -300,6 +300,37 @@ struct SettingsOverlay: View {
                 }
             }
 
+            sectionLabel("HOT CORNER")
+            group {
+                row(
+                    title: "Enable hot corner",
+                    subtitle: "Park the cursor in a screen corner to reveal quivnote",
+                ) {
+                    quivToggle(editorSettings.hotCornerEnabled) {
+                        editorSettings.hotCornerEnabled.toggle()
+                    }
+                }
+
+                if editorSettings.hotCornerEnabled {
+                    row(title: "Corner", subtitle: "Screen corner that reveals quivnote", showsDivider: false) {
+                        Picker("", selection: Binding(
+                            get: { editorSettings.hotCorner },
+                            set: { editorSettings.hotCorner = $0 }
+                        )) {
+                            ForEach(HotCornerManager.Corner.allCases, id: \.self) { corner in
+                                Label(corner.label, systemImage: corner.symbolName).tag(corner)
+                            }
+                        }
+                        .labelsHidden()
+                        .accessibilityLabel("Activation corner")
+                        .pickerStyle(.menu)
+                        .tint(QuivPalette.accent)
+                        .controlSize(.small)
+                        .frame(width: 130)
+                    }
+                }
+            }
+
             sectionLabel("GLOBAL SHORTCUT")
             group {
                 row(title: "Enable hotkey", subtitle: "Show or hide quivnote from anywhere") {
@@ -323,6 +354,7 @@ struct SettingsOverlay: View {
             }
         }
         .animation(reduceMotion ? nil : .easeOut(duration: 0.15), value: editorSettings.hotKeyEnabled)
+        .animation(reduceMotion ? nil : .easeOut(duration: 0.15), value: editorSettings.hotCornerEnabled)
     }
 
     // MARK: - Data

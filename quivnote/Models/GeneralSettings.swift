@@ -61,6 +61,23 @@ final class GeneralSettings {
         }
     }
 
+    // MARK: - Hot corner
+
+    var hotCornerEnabled: Bool {
+        didSet {
+            guard hotCornerEnabled != oldValue else { return }
+            save()
+        }
+    }
+
+    /// Screen corner that reveals the note launcher.
+    var hotCorner: HotCornerManager.Corner {
+        didSet {
+            guard hotCorner != oldValue else { return }
+            save()
+        }
+    }
+
     // MARK: - Global hotkey
 
     var hotKeyEnabled: Bool {
@@ -129,6 +146,9 @@ final class GeneralSettings {
         launchAtLogin = SMAppService.mainApp.status == .enabled
         hideWhenClickingOutside = defaults.bool(forKey: "quiv.window.hideOnOutsideClick")
 
+        hotCornerEnabled = defaults.object(forKey: "quiv.hotcorner.enabled") as? Bool ?? true
+        hotCorner = HotCornerManager.Corner(rawValue: defaults.string(forKey: "quiv.hotcorner.corner") ?? "") ?? .bottomLeft
+
         hotKeyEnabled = defaults.object(forKey: "quiv.hotkey.enabled") as? Bool ?? true
         let storedCode = defaults.object(forKey: "quiv.hotkey.keyCode") as? UInt32
         hotKeyCode = storedCode ?? UInt32(kVK_ANSI_N)
@@ -142,6 +162,8 @@ final class GeneralSettings {
         defaults.set(defaultLineNumbers, forKey: "quiv.editor.lineNumbers")
         defaults.set(editorFontSize, forKey: "quiv.editor.fontSize")
         defaults.set(hideWhenClickingOutside, forKey: "quiv.window.hideOnOutsideClick")
+        defaults.set(hotCornerEnabled, forKey: "quiv.hotcorner.enabled")
+        defaults.set(hotCorner.rawValue, forKey: "quiv.hotcorner.corner")
         defaults.set(hotKeyEnabled, forKey: "quiv.hotkey.enabled")
         defaults.set(hotKeyCode, forKey: "quiv.hotkey.keyCode")
         defaults.set(hotKeyModifiers, forKey: "quiv.hotkey.modifiers")
